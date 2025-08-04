@@ -9,7 +9,7 @@ import scipy as sp
 import torch
 import time
 import igl
-import rig.riglogic as rl
+import metacompskin.rig.riglogic as rl
 
 
 def buildTR(device):
@@ -121,11 +121,11 @@ def train(num_iter, power, alpha, beta=None, normalizeW=False):
             W.copy_(Wpruned)
             W.clamp_(min=0)
 
-            Bdecider = Brt.abs()
-            Bcutoff = torch.topk(Bdecider.flatten(), total_nnz_Brt).values[-1]
-            Bmask = Bdecider >= Bcutoff
-            Bpruned = Bmask * Brt
-            Brt.copy_(Bpruned)
+            # Bdecider = Brt.abs()
+            # Bcutoff = torch.topk(Bdecider.flatten(), total_nnz_Brt).values[-1]
+            # Bmask = Bdecider >= Bcutoff
+            # Bpruned = Bmask * Brt
+            # Brt.copy_(Bpruned)
 
         if i % 200 == 0:
             BX, _, _ = compBX(Wn, Brt, TR, n_bs, P)
@@ -179,19 +179,18 @@ def generateXforms(weights, shapeXforms):
     return res
 
 
-model = "aura"  # change to 'jupiter' / 'proteus' / 'bowen' to run another model
 seed = 12345
-P = 40  # number of bones
-max_influences = 8  # number of weights per vertex
-total_nnz_Brt = 6000  # number of non-zero values into Brt matrix
+P = 200  # number of bones
+max_influences = 32  # number of weights per vertex
+# total_nnz_Brt = 6000  # number of non-zero values into Brt matrix
 init_weight = 1e-3
-power = 2  # metric power
+power = 12  # metric power
+alpha = 5
 beta = None
-alphaValues = {"aura": 10, "jupiter": 10, "proteus": 50, "bowen": 50}  # alpha values for all models
 
 torch.manual_seed(seed)
 device = "cuda" if torch.cuda.is_available() else "cpu"
-npb = np.load(f"in/{model}.npz", allow_pickle=True)
+npb = np.load(f"data/in/proteus.npz", allow_pickle=True)
 n_bs = npb["deltas"].shape[0]
 deltas = npb["deltas"].transpose(1, 0, 2).reshape(-1, n_bs * 3).transpose()
 
@@ -217,7 +216,13 @@ loss_list, abserr_list = [], []
 
 TR = buildTR(device)
 # Brt - 6 degree of freedom  per blendshape per bone  (6, numBlendshapes, numBones, 1, 1)
-Brt = (init_weight * torch.randn((6, n_bs, P, 1, 1))).clone().float().to(device).requires_grad_()
+Brt = (
+    (init_weight * torch.randn((6, n_bs, P, 1, 1)))
+    .clone()
+    .float()
+    .to(device)
+    .requires_grad_()
+)
 
 rest_centered = rest - rest.mean(axis=0)
 # rest_pose  nx4 aray of vertices (with forth column 1)
@@ -225,7 +230,6 @@ rest_pose = torch.from_numpy(add_homog_coordinate(rest_centered, 1)).float().to(
 # W PxN (numBonex x numVertices) weights one per vertex per bone
 W = (1e-8 * torch.randn(P, N)).clone().float().to(device).requires_grad_()
 
-alpha = alphaValues[model]
 param_list = [Brt, W]
 
 optimizer = torch.optim.Adam(param_list, lr=1e-3, betas=(0.9, 0.9))
@@ -234,6 +238,8 @@ train(10000, power=power, alpha=alpha, beta=beta, normalizeW=False)
 optimizer = torch.optim.Adam(param_list, lr=1e-3, betas=(0.9, 0.9))
 train(10000, power=power, alpha=alpha, beta=beta, normalizeW=True)
 
+optimizer.param_groups[0]["lr"] = 1e-4
+train(480000, power=power, alpha=alpha, beta=beta, normalizeW=True)
 
 Wn = W / W.sum(axis=0)
 print(Wn.min().item(), Wn.max().item())
@@ -249,11 +255,13 @@ print(f"meanDelta {meanDelta}")
 inbetween_dict = npb["inbetween_info"].item()
 corrective_dict = npb["combination_info"].item()
 
-test_anim = np.load("in/test_anim.npz")
+test_anim = np.load("data/in/test_anim.npz")
 # anim_weights num_frames x num_blendshapes
 # one weight per blendshape per frame
 anim_weights = rl.compute_rig_logic(
-    torch.from_numpy(test_anim["weights"][:, :72]).float(), inbetween_dict, corrective_dict
+    torch.from_numpy(test_anim["weights"][:, :72]).float(),
+    inbetween_dict,
+    corrective_dict,
 ).numpy()
 
 num_frames = anim_weights.shape[0]
@@ -264,7 +272,7 @@ _, B, _ = compBX(Wn, Brt, TR, n_bs, P)
 shapeXforms = B.detach().cpu().numpy()
 
 np.savez(
-    "out/result.npz",
+    "data/out/result.npz",
     rest=npf(rest_pose[:, :3]),
     quads=quads,
     weights=npf(Wn).transpose(),
