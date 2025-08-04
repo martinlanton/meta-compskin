@@ -1,3 +1,10 @@
+"""
+model_fit.py
+------------
+Implements the SkinCompressor class for blendshape compression and optimization.
+Handles loading model data, running optimization, and saving results.
+"""
+
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
@@ -20,7 +27,18 @@ out_location = data_location / "out"
 
 
 class SkinCompressor:
+    """
+    SkinCompressor converts blendshape deltas to 2 matrices for skin weights and joint transformations.
+    """
+
     def __init__(self, model_file=None, iterations=10000):
+        """
+        Initializes the SkinCompressor.
+
+        Args:
+            model_file (str, optional): Path to the model file. If None, uses the default model.
+            iterations (int): Number of optimization iterations.
+        """
         self.iterations = iterations
         self.model = "aura"
         self.number_of_bones = 40
@@ -32,9 +50,7 @@ class SkinCompressor:
         # TODO : The alpha is used for Laplacian regularization. Lower values lead to sharper
         #  results, whereas higher values lead to smoother results. That means that alpha values
         #  should be lower for high density meshes and higher for low density meshes.
-        #  As a result, that means we can probably proceduralize the computation of the alpha value
-        #  based on the mesh density (number of points per size).
-        # Aura : 5944
+        #  Can we procedurally determine the alpha value based on mesh density and sharpness?
         self.alpha_values = {"aura": 10, "jupiter": 10, "proteus": 50, "bowen": 50}
         self.alpha = self.alpha_values[self.model]
 
@@ -43,7 +59,11 @@ class SkinCompressor:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        # TODO : extract model loading to a separate class/function
+        # TODO : the SkinCompressor class should receive the deltas, rest_verts,
+        #  and rest_faces directly, or an object containing them
         self.npb = self.get_model(model_file)
+        self.print_content(self.npb)
 
         self.n_bs = self.npb["deltas"].shape[0]
         self.rest_verts = self.npb["rest_verts"]
@@ -53,11 +73,18 @@ class SkinCompressor:
         self.loss_list = []
         self.abserr_list = []
 
-    def get_model(self, model_file):
-        """Loads the model data from a file or uses a default model.
+    def print_content(self, npb):
+        for f in npb.files:
+            print(f"{f} : {npb[f].shape} {npb[f].dtype}")
 
-        :param model_file: Path to the model file. If None, uses the default model.
-        :return:
+    def get_model(self, model_file):
+        """
+        Loads the model data from a file or uses a default model.
+
+        Args:
+            model_file (str or None): Path to the model file. If None, uses the default model.
+        Returns:
+            dict: Loaded model data.
         """
         default_model = self.model
 
@@ -66,6 +93,13 @@ class SkinCompressor:
         return np.load(model_file, allow_pickle=True)
 
     def run(self, output_filename="result", generate_frames=False):
+        """
+        Runs the optimization process and saves the results.
+
+        Args:
+            output_filename (str): Name for the output file.
+            generate_frames (bool): Whether to generate output frames for visualization.
+        """
         A = self.get_matrix_for_optimization()
         N = A.shape[1]  # number of vertices
 
@@ -127,23 +161,32 @@ class SkinCompressor:
             shapeXform=shapeXforms,
         )
 
-        # TODO : determine if we really need to generate frames or if those are purely for visualization of the result
-        # TODO : extract this altogether to a separate method
         if generate_frames:
             self.generate_output_frames(
                 Wn, self.rest_faces, self.rest_pose, shapeXforms
             )
 
     def get_matrix_for_optimization(self) -> torch.Tensor:
-        """Returns a blendshape matrix A that is the goal for optimization.
+        """
+        Returns the blendshape matrix A that is the target for optimization.
 
-        The matrix's shape is: (num_blendShapes * 3 (x, y, z), num vertices)"""
+        Returns:
+            torch.Tensor: Blendshape matrix of shape (num_blendShapes * 3, num_vertices).
+        """
         deltas = (
             self.npb["deltas"].transpose(1, 0, 2).reshape(-1, self.n_bs * 3).transpose()
         )
         return torch.from_numpy(deltas).float().to(self.device)
 
     def get_laplacian_regularization(self, rest_faces):
+        """
+        Computes Laplacian regularization matrix for mesh smoothing.
+
+        Args:
+            rest_faces (np.ndarray): Array of mesh faces.
+        Returns:
+            torch.Tensor: Laplacian regularization matrix as a sparse tensor.
+        """
         # Adjacency matrix: represents the connectivity of the mesh
         adj = igl.adjacency_matrix(rest_faces)
         # Diagonal adjacency matrix: calculates the degree of each vertex
@@ -165,6 +208,16 @@ class SkinCompressor:
         W: torch.Tensor,
         normalizeW=False,
     ):
+        """
+        Trains the blendshape and bone weights using Adam optimizer.
+
+        Args:
+            Brt (torch.Tensor): Blendshape-bone transformation tensor.
+            TR (torch.Tensor): Transformation basis tensor.
+            A (torch.Tensor): Target blendshape matrix.
+            W (torch.Tensor): Bone weights tensor.
+            normalizeW (bool): Whether to normalize weights during training.
+        """
         param_list = [Brt, W]
         self.optimizer = torch.optim.Adam(param_list, lr=1e-3, betas=(0.9, 0.9))
 
@@ -216,6 +269,18 @@ class SkinCompressor:
                 st = time.time()
 
     def compBX(self, Wn, Brt, TR, n_bs, P):
+        """
+        Computes the linear blend skinning result and transformation matrices.
+
+        Args:
+            Wn (torch.Tensor): Normalized bone weights.
+            Brt (torch.Tensor): Blendshape-bone transformation tensor.
+            TR (torch.Tensor): Transformation basis tensor.
+            n_bs (int): Number of blendshapes.
+            P (int): Number of bones.
+        Returns:
+            tuple: (BX, B, X) where BX is the blendshape result, B is the transformation matrix, X is the weighted rest pose.
+        """
         # calculates Linear Blend Skinning
         # Wn ∈ PxN   (numBones x numVertices)
         # Brt - 6 degree of freedom  per blendshape per bone  (6, n_bs, numBones, 1, 1)
@@ -256,32 +321,13 @@ class SkinCompressor:
         #              └               ┘
         return B @ X, B, X
 
-    def generate_output_frames(self, Wn, quads, rest_pose, shapeXforms):
-        inbetween_dict = self.npb["inbetween_info"].item()
-        corrective_dict = self.npb["combination_info"].item()
-        test_anim_file = data_location / "in/test_anim.npz"
-        test_anim = np.load(test_anim_file)
-        # anim_weights num_frames x num_blendshapes
-        # one weight per blendshape per frame
-        anim_weights = rl.compute_rig_logic(
-            torch.from_numpy(test_anim["weights"][:, :72]).float(),
-            inbetween_dict,
-            corrective_dict,
-        ).numpy()
-        num_frames = anim_weights.shape[0]
-        print(num_frames, anim_weights.shape[1])
-        for i in range(num_frames):
-            T = generateXforms(anim_weights[i, :], shapeXforms)
-            X = npf(
-                (Wn.unsqueeze(2) * rest_pose)
-                .permute(0, 2, 1)
-                .reshape(4 * self.number_of_bones, -1)
-            )
-            anim_verts = T @ X
-            filename = data_location / f"out/anim_frame{i:05d}.obj"
-            igl.write_obj(str(filename), anim_verts.transpose(), quads)
-
     def buildTR(self):
+        """
+        Builds the transformation basis tensor for blendshape-bone transformations.
+
+        Returns:
+            torch.Tensor: Transformation basis tensor of shape (6, 1, 1, 3, 4).
+        """
         # fmt: off
         ebase = torch.tensor([[[0, 0,  0, 0],
                                [0, 0, -1, 0],
@@ -309,14 +355,66 @@ class SkinCompressor:
         return ebase.reshape(6, 1, 1, 3, 4)
         # fmt: on
 
+    def generate_output_frames(self, Wn, quads, rest_pose, shapeXforms):
+        """
+        Generates and saves output frames for animation visualization.
+
+        Args:
+            Wn (torch.Tensor): Normalized bone weights.
+            quads (np.ndarray): Mesh faces.
+            rest_pose (torch.Tensor): Rest pose vertices.
+            shapeXforms (np.ndarray): Shape transformation matrices.
+        """
+        inbetween_dict = self.npb["inbetween_info"].item()
+        corrective_dict = self.npb["combination_info"].item()
+        test_anim_file = data_location / "in/test_anim.npz"
+        test_anim = np.load(test_anim_file)
+        # anim_weights num_frames x num_blendshapes
+        # one weight per blendshape per frame
+        anim_weights = rl.compute_rig_logic(
+            torch.from_numpy(test_anim["weights"][:, :72]).float(),
+            inbetween_dict,
+            corrective_dict,
+        ).numpy()
+        num_frames = anim_weights.shape[0]
+        print(num_frames, anim_weights.shape[1])
+        for i in range(num_frames):
+            T = generateXforms(anim_weights[i, :], shapeXforms)
+            X = npf(
+                (Wn.unsqueeze(2) * rest_pose)
+                .permute(0, 2, 1)
+                .reshape(4 * self.number_of_bones, -1)
+            )
+            anim_verts = T @ X
+            filename = data_location / f"out/anim_frame{i:05d}.obj"
+            igl.write_obj(str(filename), anim_verts.transpose(), quads)
+
 
 def add_homog_coordinate(M, dim):
+    """
+    Adds a homogeneous coordinate to the input matrix along the specified dimension.
+
+    Args:
+        M (np.ndarray): Input matrix.
+        dim (int): Dimension to add the coordinate.
+    Returns:
+        np.ndarray: Matrix with homogeneous coordinate added.
+    """
     x = list(M.shape)
     x[dim] = 1
     return np.concatenate([M, np.ones(x)], axis=dim).astype(M.dtype)
 
 
 def generateXforms(weights, shapeXforms):
+    """
+    Generates skinning transforms from blendshape weights and transformation matrices.
+
+    Args:
+        weights (np.ndarray): Blendshape weights.
+        shapeXforms (np.ndarray): Shape transformation matrices.
+    Returns:
+        np.ndarray: Skinning transforms for each bone.
+    """
     # weights ... (num_shapes, 1), output of riglogic
     # shapeXforms ... (3*num_shapes, 4*num_proxy_bones) matrix
     # returns: (num_proxy_bones, 3, 4) skinning transforms, input to skinCluster
@@ -349,11 +447,17 @@ def generateXforms(weights, shapeXforms):
 
 
 def npf(T):
+    """
+    Converts a PyTorch tensor to a NumPy array.
+
+    Args:
+        T (torch.Tensor): Input tensor.
+    Returns:
+        np.ndarray: Converted NumPy array.
+    """
     return T.detach().cpu().numpy()
 
 
 # TODO : refactor to make it usable with parameters
-# TODO : train with different 3d models?
-# TODO : add tests for our output
 # TODO : refactor as needed
 # TODO : document

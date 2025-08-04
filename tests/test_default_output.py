@@ -26,7 +26,6 @@ class TestCompskin(unittest.TestCase):
 
     def test_default_output_short_iter(self):
         compressor = model_fit.SkinCompressor(iterations=600)
-        compressor.model = "aura"
         compressor.run(output_filename=self.output_filename)
 
         result_data = np.load(str(self.result_file))
