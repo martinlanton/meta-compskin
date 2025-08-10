@@ -461,3 +461,4 @@ def npf(T):
 # TODO : refactor to make it usable with parameters
 # TODO : refactor as needed
 # TODO : document
+# TODO : make sure that the whole white paper file is correct, and add images
