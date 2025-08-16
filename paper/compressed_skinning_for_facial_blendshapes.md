@@ -1,88 +1,63 @@
-Compressed Skinning for Facial Blendshapes
+# Compressed Skinning for Facial Blendshapes
 
-Ladislav Kavan
-lkavan@meta.com
-Meta
-Zürich, Switzerland
+* Ladislav Kavan, lkavan@meta.com , Meta , Zürich, Switzerland 
+* John Doublestein, jdoublestein@meta.com , Meta , Redmond, USA
+* Martin Prazak , map@meta.com , Meta , Zürich, Switzerland
+* Matthew Cioffi , mail@mattcioffi.com , Meta , Londonderry, USA
+* Doug Roble , droble@acm.org , Meta , Sausalito, USA
 
-John Doublestein
-jdoublestein@meta.com
-Meta
-Redmond, USA
-
-Martin Prazak
-map@meta.com
-Meta
-Zürich, Switzerland
-
-Matthew Cioffi
-mail@mattcioffi.com
-Meta
-Londonderry, USA
-
-Doug Roble
-droble@acm.org
-Meta
-Sausalito, USA
-
-Initialization 200 iterations Converged Original Our method Dem Bones
+![Method comparison](images/comparison.png)
 
 
-Figure 1: Starting from a random initialization of skinning weights, our method converges to a linear
-blend skinning approximation of input blendshapes. The accuracy and visual quality of our results is
-comparable to the state-of-the-art (Dem Bones), but introduces significantly smaller run-time
-overheads. In the figure, each color visualizes the influence of one bone, with 40 bones total.
+> **Figure 1:** Starting from a random initialization of skinning weights, our method converges to a linear
+>blend skinning approximation of input blendshapes. The accuracy and visual quality of our results is
+>comparable to the state-of-the-art (Dem Bones), but introduces significantly smaller run-time
+>overheads. In the figure, each color visualizes the influence of one bone, with 40 bones total.
 
-ABSTRACT
 
-We present a new method to bake classical facial animation blendshapes into a fast linear blend
-skinning representation. Previous work explored skinning decomposition methods that approximate
-general animated meshes using a dense set of bone transformations; these optimizers typically
-alternate between optimizing for the bone transformations and the skinning weights. We depart from
-this alternating scheme and propose a new approach based on proximal algorithms, which effectively
-means adding a projection step to the popular Adam optimizer. This approach is very flexible and
-allows us to quickly experiment with various additional constraints and/or loss functions.
-Specifically, we depart from the classical skinning paradigms and restrict the transformation
-coefficients to contain only about 10% non-zeros, while achieving similar accuracy and visual
-quality as the state-of-the-art. The sparse storage enables our method to deliver significant
-savings in terms of both memory and run-time speed. We include a compact implementation of our
-new skinning decomposition method in PyTorch, which is easy to experiment with and modify to
-related problems.
+## ABSTRACT
 
-Permission to make digital or hard copies of part or all of this work for personal or classroom
-use is granted without fee provided that copies are not made or distributed for profit or
-commercial advantage and that copies bear this notice and the full citation on the first page.
-Copyrights for third-party components of this work must be honored. For all other uses, contact
-the owner/author(s).
+We present a new method to bake classical facial animation blendshapes
+into a fast linear blend skinning representation. Previous
+work explored skinning decomposition methods that approximate
+general animated meshes using a dense set of bone transformations;
+these optimizers typically alternate between optimizing for
+the bone transformations and the skinning weights. We depart from
+this alternating scheme and propose a new approach based on proximal
+algorithms, which effectively means adding a projection step
+to the popular Adam optimizer. This approach is very flexible and
+allows us to quickly experiment with various additional constraints
+and/or loss functions. Specifically, we depart from the classical
+skinning paradigms and restrict the transformation coefficients to
+contain only about 10% non-zeros, while achieving similar accuracy
+and visual quality as the state-of-the-art. The sparse storage enables
+our method to deliver significant savings in terms of both memory
+and run-time speed. We include a compact implementation of our
+new skinning decomposition method in PyTorch, which is easy to
+experiment with and modify to related problems.
 
-SIGGRAPH Conference Papers ’24, July 27-August 1, 2024, Denver, CO, USA
-© 2024 Copyright held by the owner/author(s).
-ACM ISBN 979-8-4007-0525-0/24/07.
-https://doi.org/10.1145/3641519.3657477
-
-We present a new skinning decomposition method in PyTorch, which is easy to experiment with and
-modify to related problems.
-
-CCS CONCEPTS
+## CCS CONCEPTS
 • Computing methodologies → Animation.
 
-KEYWORDS
+## KEYWORDS
 facial animation, blendshapes, skinning decomposition
 
-ACM Reference Format:
+### ACM Reference Format:
 Ladislav Kavan, John Doublestein, Martin Prazak, Matthew Cioffi, and Doug Roble. 2024.
 Compressed Skinning for Facial Blendshapes. In Special Interest Group on Computer Graphics and
 Interactive Techniques Conference Conference Papers ’24 (SIGGRAPH Conference Papers ’24), July
 27-August 1, 2024, Denver, CO, USA. ACM, New York, NY, USA, 9 pages.
 https://doi.org/10.1145/3641519.3657477
 
-1 INTRODUCTION
+## 1 - INTRODUCTION
 
-Many people can access interactive graphics only through inexpensive handheld devices, which is problematic for delivering appealing
-animated 3D characters. While cloud compute is one potential solution, scaling graphics workloads to billions of users would require a
-prohibitive amount of compute resources. Therefore, on-device execution is the most viable path to deliver interactive 3D experiences
+Many people can access interactive graphics only through inexpensive
+handheld devices, which is problematic for delivering appealing
+animated 3D characters. While cloud compute is one potential solution,
+scaling graphics workloads to billions of users would require a
+prohibitive amount of compute resources. Therefore, on-device execution
+is the most viable path to deliver interactive 3D experiences
 to a large user base. Artists working with facial animation and
-arXiv:2406.11597v2 [cs.GR] 4 Jul 2024SIGGRAPH Conference Papers ’24, July 27-August 1, 2024, Denver, CO, USA Ladislav Kavan, John Doublestein, Martin Prazak, Matthew Cioffi, and Doug Roble
 rigging usually seek maximum creative control and flexibility. This
 often leads to the use of a large number of blendshapes. High-end
 film rigs use over 1000 blendshapes, and even less detailed stylized
@@ -90,102 +65,134 @@ characters still require about 200-300 blendshapes, especially due
 to corrective shapes needed to overcome the limitations of linear
 blending.
 
-Many data compression algorithms have been studied in the past, but real-time animation requires a
+Many data compression algorithms have been studied in the past,
+but real-time animation requires adecompression method that is
+fast and integrates well with a GPU that performs the final rendering.
+Linear blend skinning decomposition methods [James and Twigg 2005]
+have been proposed to solve this problem for general
+animated meshes and they also work well for facial blendshapes.
 
-decompression method that is fast and integrates well with a GPU that performs the final rendering.
-
-Linear blend skinning decomposition methods [James and Twigg 2005] have been proposed to solve this
-problem for general animated meshes and they also work well for facial blendshapes.
-
-Linear blend skinning decomposition departs from the traditional hierarchical skeleton structures and
-instead approximates an input data matrix A ∈ R3𝑆×𝑁 as a product of two factors: A ≈ BC, where
-B ∈ R3𝑆×4𝑃, C ∈ R4𝑃 ×𝑁 . The input matrix A contains the x, y, z coordinates of the 𝑆 input shapes with
-𝑁 vertices; the 𝑃 is the number of proxy-bones. The matrices B and C have special structure: B is typically
-dense and stacks the skinning transformations; C is typically sparse and combines the skinning weights
-with the rest pose. The problem of “skinning decomposition” can be defined as finding the factors B and C
-for a given A.
-
-The state-of-the-art method for solving this problem is implemented in the open source ‘Dem Bones”
-library [Electronic Arts [n. d.]; Le and Deng 2012] which has been integrated in Maya, Houdini and many
-other tools. Linear blend skinning is a widely recognized standard in interactive graphics. By adhering to
-this standard, we can take advantage of highly optimized shader implementations, file formats, and tools
+Linear blend skinning decomposition departs from the traditional
+hierarchical skeleton structures and instead approximates an input
+data matrix **A** ∈ $\mathbb{R}^{3S \times N}$ as a product of two factors: **A** ≈ **BC**, where
+**B** ∈ $\mathbb{R}^{3S \times 4P}$, **C** ∈ $\mathbb{R}^{4P \times N}$. The input matrix **A** contains the x, y, z
+coordinates of the 𝑆 input shapes with 𝑁 vertices; the 𝑃 is the
+number of proxy-bones. The matrices **B** and **C** have special 
+structure: **B** is typically dense and stacks the skinning transformations;
+**C** is typically sparse and combines the skinning weights with the
+rest pose. The problem of “skinning decomposition” can be defined
+as finding the factors **B** and **C** for a given **A**. The state-of-the-art
+method for solving this problem is implemented in the open source
+"Dem Bones" library [Electronic Arts [n. d.]; Le and Deng 2012]
+which has been integrated in Maya, Houdini and many other tools.
+Linear blend skinning is a widely recognized standard in interactive
+graphics. By adhering to this standard, we can take advantage of
+highly optimized shader implementations, file formats, and tools
 that are already in place.
 
-In Dem Bones, as well as in most publications on this problem, the user has to select a fixed number of
-proxy-bones. These proxy-bones do not have any anatomical meaning, but they correspond to individual
-skinning transformations; each transformation drives part of the mesh. With our rigs, we found that as few
-as 40 proxy-bones lead to acceptable quality with Dem Bones. However, even with a modest set of 300
-blendshapes, this introduces significant run-time overheads, because for each of the shapes we need to
-store all of the proxy-bone transformations: 300 × 40 = 12000 (with each individual transformation
-represented either via a 3 × 4 matrix or a [quaternion, translation] pair). These transformations have to be
-read and blended at run-time for each character, every frame.
+In Dem Bones, as well as in most publications on this problem,
+the user has to select a fixed number of proxy-bones. These proxy-bones
+do not have any anatomical meaning, but they correspond
+to individual skinning transformations; each transformation drives
+part of the mesh. With our rigs, we found that as few as 40 proxy-bones
+lead to acceptable quality with Dem Bones. However, even
+with a modest set of 300 blendshapes, this introduces significant
+run-time overheads, because for each of the shapes we need to store
+all of the proxy-bone transformations: 300 × 40 = 12000 (with each
+individual transformation represented either via a 3 × 4 matrix or a
+[quaternion, translation] pair). These transformations have to be
+read and blended at run-time for each character, every frame. We
+can do better if we revisit the problem of skinning decomposition
+from scratch. Previous work explored solvers based on alternating
+between optimization for the skinning weights and the transformations
+(cyclic coordinate descent). More and more efficient and
+general solvers were explored during the 2005 - 2015 decade and
+open sourced in 2019 in the Dem Bones library. The need to minimize
+the run-time compute requirements lead us to explore an
+entirely different optimization strategy, motivated by the success
+of first-order optimization methods used in deep learning. This is
+not trivial, because typical deep learning optimizers assume unconstrained
+optimization and typically handle bounds via sigmoid
+or softmax functions. This may be sufficient for non-negativity
+and affinity of the skinning weights, but the hard constraint of
+spatial sparsity is more difficult. Inspired by proximal algorithms,
+well studied in the convex setting [Parikh et al. 2014], we append a
+constraint-projection step to the popular Adam optimizer [Kingma and Ba 2014];
+this is a key ingredient of our proposed method.
 
-We can do better if we revisit the problem of skinning decomposition from scratch. Previous work
-explored solvers based on alternating between optimization for the skinning weights and the
-transformations (cyclic coordinate descent). More and more efficient and general solvers were explored
-during the 2005 - 2015 decade and open sourced in 2019 in the Dem Bones library. The need to minimize
-the run-time compute requirements lead us to explore an entirely different optimization strategy,
-motivated by the success of first-order optimization methods used in deep learning. This is not trivial,
-because typical deep learning optimizers assume unconstrained optimization and typically handle bounds
-via sigmoid or softmax functions. This may be sufficient for non-negativity and affinity of the skinning
-weights, but the hard constraint of spatial sparsity is more difficult.
-
-Inspired by proximal algorithms, well studied in the convex setting [Parikh et al. 2014], we append a
-constraint-projection step to the popular Adam optimizer [Kingma and Ba 2014]; this is a key ingredient
-of our proposed method.
-
-We are solving exactly the same optimization objective (loss) as previous skinning decomposition
-methods, including Dem Bones. However, this objective is highly non-convex and thus different
-optimization methods converge to different solutions. Our approach consistently converges to solutions
-with lower errors than the Dem Bones solver. We can even lower the number of proxy-bones to 20 and
-still obtain similar accuracy as Dem Bones, but we needed more significant savings.
-
-Our key finding to report in this paper is that we can introduce sparsity constraints also on the
-transformations, i.e., zero-out about 90% of the coefficients of B and still match the accuracy of the Dem
-Bone results (this is in addition to the sparsity of C, i.e., both B and C are now sparse). This additional
-sparsification is straightforward to implement as part of the constraint-projection step. Even when
-accounting for the overhead of sparse data structures, this represents significant savings at runtime. To
-our knowledge, this additional “skinning transformation sparsification” has not been explored before and
-we propose to name it “compressed skinning” to distinguish it from previous skinning decomposition
-methods which compute dense B.
+We are solving exactly the same optimization objective (loss) as
+previous skinning decomposition methods, including Dem Bones.
+However, this objective is highly non-convex and thus different optimization
+methods converge to different solutions. Our approach
+consistently converges to solutions with lower errors than the Dem
+Bones solver. We can even lower the number of proxy-bones to
+20 and still obtain similar accuracy as Dem Bones, but we needed
+more significant savings. Our key finding to report in this paper
+is that we can introduce sparsity constraints also on the transformations,
+i.e., zero-out about 90% of the coefficients of **B** and still
+match the accuracy of the Dem Bone results (this is in addition
+to the sparsity of **C**, i.e., both **B** and **C** are now sparse). This 
+additional sparsification is straightforward to implement as part of
+the constraint-projection step. Even when accounting for the overhead
+of sparse data structures, this represents significant savings at
+runtime. To our knowledge, this additional “skinning transformation
+sparsification” has not been explored before and we propose
+to name it “compressed skinning” to distinguish it from previous
+skinning decomposition methods which compute dense **B**.
 
 Our strategy of leveraging deep learning optimizers allows for a
-compact implementation in PyTorch [Paszke et al. 2019] with automatic backward differentiation and trivial deployment to CUDA. There
-are also additional benefits: previous skinning optimization methods start with a sophisticated initial
-guess computed with spectral or k-means clustering. With our approach, we simply use the Gaussian
-noise to initialize all of our variables (Figure 1) – more complicated initializations were not necessary
-and can introduce bias or even lead to worse results (e.g. in the case of symmetries preserved by the
-optimizer). Another advantage of our approach is its flexibility, e.g., changing the loss function is just
-a simple one-line code modification. We leveraged this flexibility and tried improving the accuracy of
-our fits by changing the error metric from the classical L2 norm to an Lp norm with higher p. When we
-changed the norm to L12 and increased the number of influences to 32, the maximal error dropped by
-more than 50 times compared to Dem Bones, allowing us to recover even fine wrinkles in the original
-blendshapes, at the cost of more non-zeros weights in matrix C. However, our main focus is not
-improvements of quality but rather run-time efficiency.
+compact implementation in PyTorch [Paszke et al. 2019] with automatic
+backward differentiation and trivial deployment to CUDA.
+There are also additional benefits: previous skinning optimization
+methods start with a sophisticated initial guess computed with
+spectral or k-means clustering. With our approach, we simply use
+the Gaussian noise to initialize all of our variables (Figure 1) – more
+complicated initializations were not necessary and can introduce
+bias or even lead to worse results (e.g. in the case of symmetries
+preserved by the  optimizer). Another advantage of our approach
+is its flexibility, e.g., changing the loss function is just a simple
+one-line code modification. We leveraged this flexibility and tried
+improving the accuracy of our fits by changing the error metric
+from the classical L2 norm to an Lp norm with higher p. When we
+changed the norm to L12 and increased the number of influences to
+32, the maximal error dropped by more than 50 times compared to
+Dem Bones, allowing us to recover even fine wrinkles in the original
+blendshapes, at the cost of more non-zeros weights in matrix **C**.
+However, our main focus is not improvements of quality but rather
+run-time efficiency.
 
-Another contribution is a precise formulation of converting the “blend-weights” (i.e. the time-varying
-blendshape coefficients) to linear blend skinning transformations. This problem was not considered in
-previous skinning decomposition methods [James and Twigg 2005; Le and Deng 2012] which were more
-general and not focused on blendshape animation. This conversion is not hard but also it is not trivial
-because 1) skinning handles the rest pose differently than blendshapes and 2) linear blending of
-transformations is correct only when using a carefully chosen subset of spatial transformations
-(specifically, we use linearized rotations). Our first-order optimization approach requires longer pre-
-processing time than Dem Bones (on the order of minutes on a single GPU), but reduces the computation
-footprint on target devices.
+Another contribution is a precise formulation of converting th
+“blend-weights” (i.e. the time-varying blendshape coefficients) to
+linear blend skinning transformations. This problem was not considered
+in previous skinning decomposition methods 
+[James and Twigg 2005; Le and Deng 2012] which were more general and not
+focused on blendshape animation. This conversion is not hard but
+also it is not trivial because 1) skinning handles the rest pose differently
+than blendshapes and 2) linear blending of transformations is
+correct only when using a carefully chosen subset of spatial transformations
+(specifically, we use linearized rotations). Our first-order
+optimization approach requires longer pre- processing time than
+Dem Bones (on the order of minutes on a single GPU), but reduces
+the computation footprint on target devices.
 
 Our main technical contributions are:
+
 • New, first-order optimization method that solves skinning decomposition better than previous methods
+
 • New skinning decomposition constraint: sparsity of transformations (“compressed skinning”)
+
 • Explicit formulas to convert facial animation blend-weights into skinning transformations
 
 However, our method is more complex than classical linear blend skinning and drifts away from
 established practices, in particular:
+
 • Our method needs an extra sparse matrix-vector multiplication on the CPU to compute skinning
   transformations.
+
 • The GPU skinning shaders need to support arbitrary transformation matrices (rigid transformations are
   not sufficient).
 
-2 BACKGROUND AND RELATED WORK
+## 2 - BACKGROUND AND RELATED WORK
 Traditional facial blendshape models are typically rooted in Facial
 Action Coding System [Ekman and Friesen 1978] or its variants
 [Lewis et al. 2014], though more recent research aims at addressing their limitations: complex controls and large number of blendshapes needed for high fidelity [Choi et al. 2022; Kim and Singh
@@ -274,7 +281,7 @@ presented in the literature; skinning decomposition papers [James and Twigg 2005
 assume general animated meshes and provide only playback functionality – they do not discuss the
 specifics of facial models and the combination of blendshapes represented by skinning transformations.
 
-3 FRAMEWORK
+## 3 - FRAMEWORK
 
 We start by writing down the formula for converting 𝑐𝑘 into M𝑗. This will also help clarify the
 framework of our approach and explain the setup for our new compressed skinning decomposition
@@ -392,7 +399,7 @@ load the pre-computed 𝑤𝑖,𝑗 and N𝑘,𝑗. Then, for each animation fra
 the rig and compute M𝑗. The skinning transformations M𝑗 along with the rest-pose v0,𝑖 and weights
 𝑤𝑖,𝑗 are passed to linear blend skinning module running on the GPU.
 
-4 COMPRESSED SKINNING DECOMPOSITION
+## 4 - COMPRESSED SKINNING DECOMPOSITION
 
 In this section we discuss the details of our skinning decomposition (Figure 2: pre-processing).
 This is a non-convex optimization problem:
@@ -466,7 +473,7 @@ Aura Jupiter Proteus Bowen
 Figure 4: Histograms of the errors of our method (dark blue) and Dem Bones (light blue) in centimeters.
 Our method achieves lower errors despite sparse skinning transformations.
 
-5 RESULTS
+## 5 - RESULTS
 
 We use two error metrics to quantify the accuracy of a skinning decomposition; mean absolute error
 (MAE) and maximum absolute error (MXE). The MAE is the mean of 𝐸𝑖,𝑘 (Eq. 9) and tells us what error can
@@ -605,7 +612,7 @@ Table 6: Performance on a Windows PC in FPS and milliseconds.
     | Dem Bones        | 180  | 5.35 | 1.18 |
     | Unity blendshapes| 185  | 5.41 | 4.61 |
 
-6 CONCLUSION
+## 6 - CONCLUSION
 
 We have presented a novel method for linear blend skinning decomposition and its integration into a
 facial animation pipeline. Our new optimization strategy inspired by proximal algorithms outperforms
@@ -626,13 +633,13 @@ optimize the skinning decomposition along with a neural network approximation of
 [Bailey et al. 2020, 2018; Radzihovsky et al. 2020]; this would require us to adopt new rig evaluation
 mechanisms, but it could potentially unlock further efficiencies.
 
-ACKNOWLEDGMENTS
+## ACKNOWLEDGMENTS
 
 We thank Brian Budge, Roman Fedotov, Ryan Goldade, Stephane Grabli, Philipp Herholz, Petr Kadlecek,
 Binh Le, J.P. Lewis, Ronald Mallet, Olga Sorkine and Yuting Ye for inspiring discussions and the
 anonymous reviewers for constructive feedback.
 
-REFERENCES
+## REFERENCES
 
 Michal Aharon, Michael Elad, and Alfred Bruckstein. 2006. K-SVD: An algorithm for designing
 overcomplete dictionaries for sparse representation. IEEE Transactions on signal processing 54, 11
@@ -707,7 +714,7 @@ shape and expression from 4D scans. ACM Transactions on Graphics, (Proc. SIGGRAP
 194:1–194:17. https://doi.org/10.1145/3130800.3130813
 
 Nadia Magnenat-Thalmann, Richard Laperrire, and Daniel Thalmann. 1988. Joint-dependent local
-deformations for hand animation and object grasping. In In Proceedings on Graphics Interface 1988.
+deformations for hand animation and object grasping. In Proceedings on Graphics Interface 1988.
 
 Peter Melchior, Rémy Joseph, and Fred Moolekamp. 2019. Proximal Adam: robust adaptive update scheme
 for constrained optimization. arXiv preprint arXiv:1910.10094 (2019).
@@ -744,3 +751,18 @@ skinned models. In Computer Graphics Forum, Vol. 33. Wiley Online Library, 421�
 
 Robert Tibshirani. 1996. Regression shrinkage and selection via the lasso. Journal of the Royal Statistical
 Society Series B: Statistical Methodology 58, 1 (1996), 267–288.
+
+
+> Permission to make digital or hard copies of part or all of this work for personal or
+> classroom use is granted without fee provided that copies are not made or distributed
+> for profit or commercial advantage and that copies bear this notice and the full citation
+> on the first page. Copyrights for third-party components of this work must be honored.
+> For all other uses, contact the owner/author(s).
+> 
+> SIGGRAPH Conference Papers ’24, July 27-August 1, 2024, Denver, CO, USA
+> 
+> © 2024 Copyright held by the owner/author(s).
+> 
+> ACM ISBN 979-8-4007-0525-0/24/07.
+> 
+> https://doi.org/10.1145/3641519.3657477
