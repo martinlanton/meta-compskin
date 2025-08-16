@@ -149,7 +149,7 @@ spectral or k-means clustering. With our approach, we simply use
 the Gaussian noise to initialize all of our variables (Figure 1) – more
 complicated initializations were not necessary and can introduce
 bias or even lead to worse results (e.g. in the case of symmetries
-preserved by the  optimizer). Another advantage of our approach
+preserved by the optimizer). Another advantage of our approach
 is its flexibility, e.g., changing the loss function is just a simple
 one-line code modification. We leveraged this flexibility and tried
 improving the accuracy of our fits by changing the error metric
@@ -201,6 +201,7 @@ derive more efficient models using classical statistical methods
 [Meyer and Anderson 2007] or deep learning [Bailey et al. 2020;
 Chandran et al. 2022]. Our approach builds upon deep learning optimizers (Adam), but utilizes only the classical linear blend skinning
 model – no neural networks.
+
 The problem of skinning decomposition was introduced by [James
 and Twigg 2005] and considered general animation sequences, not
 just facial animation, but also e.g. cloth animation or stylized fullbody characters. Subsequent research led to better approximations
@@ -221,6 +222,7 @@ blendshape matrix and a tree structure eliminating blocks of zeros. This leads t
 closed-source and the decompression algorithm is much more complex than skinning. More recently, GPU-specific methods to speed
 up blendshape evaluation using compute shaders were proposed
 [Costigan et al. 2016].
+
 Beyond computer graphics, methods such as Lasso [Tibshirani
 1996], non-negative matrix factorization [Hoyer 2004; Lee and Seung 1999] and overcomplete dictionary learning [Aharon et al.
 2006] discover sparse structures in input data. Compressed sensing
@@ -237,49 +239,69 @@ input and convert them into skinning. In other words, our method
 could potentially follow [Neumann et al. 2013] or any other method
 that generates blendshapes.
 
-2.1 Blendshape Facial Models
+### 2.1 Blendshape Facial Models
 
-In this section we briefly recap standard methods for facial blendshape modeling and establish
-notation for future sections. The classical blendshape model [Lewis et al. 2014] uses the following
+In this section we briefly recap standard methods for facial blendshape
+modeling and establish notation for future sections. The
+classical blendshape model [Lewis et al. 2014] uses the following
 “delta” formulation centered at the rest-pose (neutral facial expression):
 
-vˆ0,𝑖 +
-𝑆∑︁𝑘=1
-𝑐𝑘 (vˆ𝑘,𝑖 − vˆ0,𝑖) (1)
+$$
+\begin{equation}
+\mathbf{\hat{v}}_{0,i} + \sum_{k=1}^{S} c_k (\mathbf{\hat{v}}_{k,i} - \mathbf{\hat{v}}_{0,i}) \tag{1}
+\end{equation}
+$$
 
-where vˆ0,𝑖 ∈ R3 is 𝑖-th rest-pose vertex, vˆ𝑘,𝑖 ∈ R3 is 𝑖-th vertex in blendshape number 𝑘 and 𝑐𝑘 are
-blending coefficients. With all coefficients 𝑐𝑘 set to zero, we obtain the rest-pose, typically representing
-a neutral facial expression. In a basic linear blendshape model, all 𝑐𝑘 are directly driven by the animator.
+where $\hat{V}_{0,i}$ ∈ $\mathbb{R}^{3}$ is 𝑖-th rest-pose vertex, $\hat{V}_{k,i}$ ∈ $\mathbb{R}^{3}$ is 𝑖-th vertex
+in blendshape number $k$ and $c_k$ are blending coefficients. With all
+coefficients $c_k$ set to zero, we obtain the rest-pose, typically representing
+a neutral facial expression. In a basic linear blendshape
+model, all $c_k$ are directly driven by the animator. However, the well-known
+limitations of linear blending lead to dissatisfying results for
+some combinations of $c_k$ values. To avoid this problem, artists typically
+do not modify the $c_k$ coefficients directly, but create a function
+known as a “rig” that takes as input a reduced, animator-friendly
+set of control values and outputs all of the $c_k$ coefficients. These
+controls are typically FACS-based [Ekman and Friesen 1978] and
+low-dimensional (about 40 to 80 controls), while the $c_k$ coefficients
+are more numerous (200 to 300, or more in film-quality models). The
+rig function is typically made from elementary non-linear blocks
+supporting intermediate and combination (or “corrective”) shapes.
+The details are not important in this paper but are well explained
+in the literature [Lewis et al. 2014].
 
-However, the well-known limitations of linear blending lead to dissatisfying results for some
-combinations of 𝑐𝑘 values. To avoid this problem, artists typically do not modify the 𝑐𝑘 coefficients
-directly, but create a function known as a “rig” that takes as input a reduced, animator-friendly set of
-control values and outputs all of the 𝑐𝑘 coefficients. These controls are typically FACS-based [Ekman and
-Friesen 1978] and low-dimensional (about 40 to 80 controls), while the 𝑐𝑘 coefficients are more numerous
-(200 to 300, or more in film-quality models). The rig function is typically made from elementary
-non-linear blocks supporting intermediate and combination (or “corrective”) shapes. The details are not
-important in this paper but are well explained in the literature [Lewis et al. 2014].
+### 2.2 Linear Blend Skinning
 
-2.2 Linear Blend Skinning
+Linear blend skinning has been originally developed for smooth
+deformations of articulated meshes [Magnenat-Thalmann et al. 1988],
+but it is a general deformation model [Jacobson et al. 2011]:
 
-Linear blend skinning has been originally developed for smooth deformations of articulated meshes
-[Magnenat-Thalmann et al. 1988], but it is a general deformation model [Jacobson et al. 2011]:
+$$
+\begin{equation}
+\sum_{j=1}^{P} {w}_{i,j} \mathbf{M}_j \mathbf{v}_{0, i} \tag{2}
+\end{equation}
+$$
 
-𝑃∑︁𝑗=1 𝑤𝑖,𝑗 M𝑗 v0,𝑖 (2)
-
-where v0,𝑖 ∈ R4 is vˆ0,𝑖 but with the additional coordinate set to 1; M𝑗 ∈ R3×4 are affine transformation
-matrices, corresponding to either skeletal bones in full-body animation or virtual proxy-bones [James and
-Twigg 2005]; 𝑤𝑖,𝑗 are skinning weights satisfying the following constraints; non-negativity: 𝑤𝑖,𝑗 ≥ 0,
-partition of unity: ˝𝑗 𝑤𝑖,𝑗 = 1 and spatial sparsity: the number of nonzero 𝑤𝑖,𝑗 for each 𝑖 is bounded by a
-constant 𝐾. Eq. 2 transforms only vertex positions; normals are often approximated but an accurate and
+where $\mathbf{{v}}_{0, i}$ ∈ $\mathbb{R}^{4}$ is $\mathbf{\hat{v}}_{0,i}$ but with the additional coordinate set to 1;
+$\mathbf{M}_j$ ∈ $\mathbb{R}^{3 \times 4}$ are affine transformation matrices, corresponding to
+either skeletal bones in full-body animation or virtual proxy-bones
+[James and Twigg 2005]; ${w}_{i,j}$ are skinning weights satisfying the
+following constraints; non-negativity: ${w}_{i,j}$ ≥ 0, partition of unity:
+$\sum_{j}{w}_{i,j}$ = 1 and spatial sparsity: the number of nonzero ${w}_{i,j}$ for
+each $i$ is bounded by a constant 𝐾. Eq. 2 transforms only vertex
+positions; normals are often approximated but an accurate and
 efficient method exists [Tarini et al. 2014].
 
-The transformations M𝑗 are the only time-varying parameters in an animation and thus play the same
-role as the 𝑐𝑘 coefficients in blendshape models (Eq. 1). To convert a blendshape model to a skinned one,
-we will need a way to convert 𝑐𝑘 into M𝑗. To our knowledge, this conversion method has not been
-presented in the literature; skinning decomposition papers [James and Twigg 2005; Le and Deng 2012]
-assume general animated meshes and provide only playback functionality – they do not discuss the
-specifics of facial models and the combination of blendshapes represented by skinning transformations.
+The transformations $\mathbf{M}_j$ are the only time-varying parameters
+in an animation and thus play the same role as the $c_k$ coefficients
+in blendshape models (Eq. 1). To convert a blendshape model
+to a skinned one, we will need a way to convert $c_k$ into $\mathbf{M}_j$. To our
+knowledge, this conversion method has not been presented in the
+literature; skinning decomposition papers [James and Twigg 2005;
+Le and Deng 2012] assume general animated meshes and provide
+only playback functionality – they do not discuss the specifics of
+facial models and the combination of blendshapes represented by
+skinning transformations.
 
 ## 3 - FRAMEWORK
 
