@@ -321,7 +321,7 @@ $$
 \hat{N}_{1,1} & \hat{N}_{1,2} & \cdots & \hat{N}_{1,P} \\ 
 \vdots & \vdots & \ddots & \vdots \\ 
 \hat{N}_{S,1} & \hat{N}_{S,2} & \cdots & \hat{N}_{S,P}
-\end{bmatrix}
+\end{bmatrix},
 \quad
 \mathbf{C} = 
 \begin{bmatrix}
@@ -439,77 +439,97 @@ skinning which also lends itself to a well structured code.
 
 ## 4 - COMPRESSED SKINNING DECOMPOSITION
 
-In this section we discuss the details of our skinning decomposition (Figure 2: pre-processing).
-This is a non-convex optimization problem:
+In this section we discuss the details of our skinning decomposition
+(Figure 2: pre-processing). This is a non-convex optimization
+problem:
 
-    min_{w_{i,j}, N_{k,j}} \sum_{i=1}^N \sum_{k=1}^S (E_{i,k})^p
+$$
+\min_{w_{i,j}, \mathbf{N}_{k,j}} \sum_{i=1}^N \sum_{k=1}^S (E_{i,k})^p,
+\quad
+E_{i,k} = |\mathbf{v}_{k,i} - \mathbf{v}_{0,i} - \sum_j w_{i,j} \mathbf{N}_{k,j} \mathbf{v}_{0,i}|
+\tag{9}
+$$
 
-    E_{i,k} = |v_{k,i} - v_{0,i} - \sum_j w_{i,j} N_{k,j} v_{0,i}|
+where by default we use $p = 2$ corresponding to the standard
+Euclidean norm, in which case the absolute value in the definition
+of $E_{i,k}$ is moot.
 
-    (9)
+Eq. 9 is straightforward to implement in PyTorch, please see the
+attached code (function `compBX`). However, an important feature
+of the skinning decomposition are the following constraints imposed
+on $w_{i,j}$: non-negativity, partition of unity and spatial sparsity
+(Sec. 2.2). The spatial sparsity ensures the sparsity of $\mathbf{C}$, which is a
+classical feature of skinning decomposition [James and Twigg 2005].
+On the other hand, the sparsification of $\mathbf{B}$ is a new contribution in
+this paper and we will discuss it in more detail below. To ensure
+that the skinning approximation is smooth, we also add a Laplacian
+regularization term, the same as used in previous work [Le and
+Deng 2014] and in the open source Dem Bones implementation.
 
-where by default we use p = 2 corresponding to the standard Euclidean norm, in which case the absolute
-value in the definition of E_{i,k} is moot.
+Our plan is to leverage the well established Adam optimizer, but
+the problem is that it is an unconstrained optimizer. In order to
+incorporate the skinning weight constraints, we draw inspiration
+from proximal algorithms [Parikh et al. 2014]. The partition of
+unity constraints are easy: for each vertex $i$, we simply normalize
+the weights vector $w_{i,:}$ which ensures that $\sum_j w_{i,j} = 1$. The non-negativity
+and spatial sparsity constraints can be both satisfied by
+a single projection (proximal operator for an indicator function):
+for each weight vector $w_{i,:}$, we keep only the $K$ largest weights
+and zero out the negative ones. This is conveniently and efficiently
+implemented by a single call of the `torch.topk` function. This
+projection is performed after the Adam optimizer step and does not
+participate in auto-differentiation (in PyTorch this is accomplished
+via `torch.no_grad`).
 
-Eq. 9 is straightforward to implement in PyTorch, please see the attached code (function compBX).
-However, an important feature of the skinning decomposition are the following constraints imposed on
-𝑤𝑖,𝑗 : non-negativity, partition of unity and spatial sparsity (Sec. 2.2). The spatial sparsity ensures the
-sparsity of C, which is a classical feature of skinning decomposition [James and Twigg 2005]. On the
-other hand, the sparsification of B is a new contribution in this paper and we will discuss it in more
-detail below. To ensure that the skinning approximation is smooth, we also add a Laplacian regularization
-term, the same as used in previous work [Le and Deng 2014] and in the open source Dem Bones
-implementation.
+With $p = 2$, Eq. 9 is equivalent to the optimization problem solved
+by Dem Bones [Le and Deng 2012] and our approach converges
+to solutions with similar errors as the open source Dem Bones
+solver. The key advantage of our approach is the ease with which
+we can add additional constraints or change the loss function. We
+found that we can achieve significant savings by imposing sparsity
+constraints also on the $\mathbf{B}$ matrix (the sparsity of $\mathbf{C}$ is standard in all
+skinning decomposition methods). We implement this additional
+sparsity constraint by another projection step, which consists in
+zeroing-out all but the largest $L$ elements of $\mathbf{B}$ in absolute value.
+The absolute value is necessary because we need to allow negative
+values in the skinning transformations. Another difference to the
+$\mathbf{C}$-sparsity case is that with $\mathbf{B}$, we can distribute the non-zeros
+arbitrarily in the $\mathbf{B}$ matrix, whereas the $\mathbf{C}$ limits the non-zeros
+to $K$ per column, due to the limitations of GPUs and standard
+skinning pipelines. However, the `torch.topk` function applied to
+`B.abs()` still works even in the case of the global (as opposed to
+per-column) budget of non-zero coefficients. In our experiments we
+typically set $L$ to 6000, which corresponds to 1000 transformations
+in the representation according to Eq. 8. This is less than 10% of
+the transformations used by Dem Bones, but we are still able to get
+similar or even better accuracy (Sec. 5).
 
-Our plan is to leverage the well established Adam optimizer, but the problem is that it is an unconstrained
-optimizer. In order to incorporate the skinning weight constraints, we draw inspiration from proximal
-algorithms [Parikh et al. 2014]. The partition of unity constraints are easy: for each vertex 𝑖, we simply
-normalize the weights vector 𝑤𝑖,: which ensures that ˝𝑗 𝑤𝑖,𝑗 = 1. The non-negativity and spatial sparsity
-constraints can be both satisfied by a single projection (proximal operator for an indicator function): for
-each weight vector 𝑤𝑖,:, we keep only the 𝐾 largest weights and zero out the negative ones. This is
-conveniently and efficiently implemented by a single call of the torch.topk function. This projection is
-performed after the Adam optimizer step and does not participate in auto-differentiation (in PyTorch this
-is accomplished via torch.no_grad).
+### 4.1 High Detail (HD) Fit
 
-With 𝑝 = 2, Eq. 9 is equivalent to the optimization problem solved by Dem Bones [Le and Deng 2012]
-and our approach converges to solutions with similar errors as the open source Dem Bones solver. The
-key advantage of our approach is the ease with which we can add additional constraints or change the
-loss function. We found that we can achieve significant savings by imposing sparsity constraints also on
-the B matrix (the sparsity of C is standard in all skinning decomposition methods). We implement this
-additional sparsity constraint by another projection step, which consists in zeroing-out all but the largest
-𝐿 elements of B in absolute value. The absolute value is necessary because we need to allow negative
-values in the skinning transformations. Another difference to the C-sparsity case is that with B, we can
-distribute the non-zeros arbitrarily in the B matrix, whereas the C limits the non-zeros to 𝐾 per column,
-due to the limitations of GPUs and standard skinning pipelines. However, the torch.topk function applied
-to B.abs() still works even in the case of the global (as opposed to per-column) budget of non-zero
-coefficients. In our experiments we typically set 𝐿 to 6000, which corresponds to 1000 transformations in
-the representation according to Eq. 8. This is less than 10% of the transformations used by Dem Bones,
-but we are still able to get similar or even better accuracy (Sec. 5).
+The flexibility of the PyTorch implementation invites experimentation
+with different values of $p$ in Eq. 9, corresponding to different
+norms. A particularly interesting case is $p = \infty$, in which case Eq. 9
+minimizes the _maximal_ deviation from the ground truth blendshapes.
+We call this the "HD" (High Detail) setting because the
+infinity norm is more detail-sensitive. Naively using the infinity
+norm (max) actually works, but the convergence is extremely slow
+because only the vertex with the maximal error generates non-zero
+gradients. Instead, we can approximate the infinity norm with an
+$L^p$ norm with a high $p$; experimentally, we found that $p = 12$ works
+well if the model has enough capacity in terms of the number of
+non-zeros in $\mathbf{B}$, $\mathbf{C}$. However, in our primary goal of reducing the
+compute overheads by maximizing the sparsity of $\mathbf{B}$, $\mathbf{C}$, we found
+that higher $p$ can produce non-smooth results; therefore, we use
+$p = 2$ by default.
 
-4.1 High Detail (HD) Fit
+![Dembones comparison visual](images/dembones_comparison_visual.png)
+> **Figure 3:** Our method leads to results of acceptable visual quality on various rigs and facial expressions,
+> with errors comparable to Dem Bones (red color corresponds to error of 5mm or more). However, our
+> method enables more efficient run-time.
 
-The flexibility of the PyTorch implementation invites experimentation with different values of 𝑝 in Eq. 9,
-corresponding to different norms. A particularly interesting case is 𝑝 = ∞, in which case Eq. 9 minimizes
-the maximal deviation from the ground truth blendshapes. We call this the “HD” (High Detail) setting
-because the infinity norm is more detail-sensitive. Naively using the infinity norm (max) actually works,
-but the convergence is extremely slow because only the vertex with the maximal error generates non-zero
-gradients. Instead, we can approximate the infinity norm with an 𝐿𝑝 norm with a high 𝑝; experimentally,
-we found that 𝑝 = 12 works well if the model has enough capacity in terms of the number of non-zeros
-in B, C. However, in our primary goal of reducing the compute overheads by maximizing the sparsity of
-B, C, we found that higher 𝑝 can produce non-smooth results; therefore, we use 𝑝 = 2 by default.
-
-SIGGRAPH Conference Papers ’24, July 27-August 1, 2024, Denver, CO, USA Ladislav Kavan, John Doublestein,
-Martin Prazak, Matthew Cioffi, and Doug Roble
-
-Original Our Method Dem Bones
-
-Figure 3: Our method leads to results of acceptable visual quality on various rigs and facial expressions,
-with errors comparable to Dem Bones (red color corresponds to error of 5mm or more). However, our
-method enables more efficient run-time.
-
-Aura Jupiter Proteus Bowen
-
-Figure 4: Histograms of the errors of our method (dark blue) and Dem Bones (light blue) in centimeters.
-Our method achieves lower errors despite sparse skinning transformations.
+![Model comparison graphs](images/model_comparison_graphs.png)
+> **Figure 4:** Histograms of the errors of our method (dark blue) and Dem Bones (light blue) in centimeters.
+> Our method achieves lower errors despite sparse skinning transformations.
 
 ## 5 - RESULTS
 
