@@ -685,24 +685,30 @@ longer GPU compute.
 
 ## 6 - CONCLUSION
 
-We have presented a novel method for linear blend skinning decomposition and its integration into a
-facial animation pipeline. Our new optimization strategy inspired by proximal algorithms outperforms
-the state-of-the-art and allows us to significantly reduce the run-time overhead of blending skinning
-transformations, as well as the memory footprint thanks to sparse storage. Alternatively, the benefits of
-our new optimization method can also be directed towards increasing the fitting accuracy and preserving
-geometric details.
+We have presented a novel method for linear blend skinning decomposition
+and its integration into a facial animation pipeline. Our
+new optimization strategy inspired by proximal algorithms outperforms
+the state-of-the-art and allows us to significantly reduce the
+run-time overhead of blending skinning transformations, as well
+as the memory footprint thanks to sparse storage. Alternatively,
+the benefits of our new optimization method can also be directed
+towards increasing the fitting accuracy and preserving geometric
+details. Our meshes contain eye- and mouth-bags and the error
+is evaluated equally on all vertices. One possible extension of our
+method would be to introduce importance weighing of individual
+vertices to e.g. reduce the accuracy on the usually invisible insides
+the eyes and the mouth and increase accuracy on more salient parts
+of the mesh, such as the nasolabial fold.
 
-Our meshes contain eye- and mouth-bags and the error is evaluated equally on all vertices. One possible
-extension of our method would be to introduce importance weighing of individual vertices to e.g. reduce
-the accuracy on the usually invisible insides the eyes and the mouth and increase accuracy on more
-salient parts of the mesh, such as the nasolabial fold.
-
-One limitation of our method are longer pre-processing times due to the first-order optimization
-approach that requires many iterations. Another limitation is that we consider the rig function as a black
-box, even though there may be room for further optimizations. In the future, it may be possible to jointly
-optimize the skinning decomposition along with a neural network approximation of the rig function
-[Bailey et al. 2020, 2018; Radzihovsky et al. 2020]; this would require us to adopt new rig evaluation
-mechanisms, but it could potentially unlock further efficiencies.
+One limitation of our method are longer pre-processing times
+due to the first-order optimization approach that requires many
+iterations. Another limitation is that we consider the rig function as a
+black box, even though there may be room for further optimizations.
+In the future, it may be possible to jointly optimize the skinning
+decomposition along with a neural network approximation of the
+rig function [Bailey et al. 2020, 2018; Radzihovsky et al. 2020]; this
+would require us to adopt new rig evaluation mechanisms, but it
+could potentially unlock further efficiencies.
 
 ## ACKNOWLEDGMENTS
 
