@@ -74,14 +74,14 @@ animated meshes and they also work well for facial blendshapes.
 
 Linear blend skinning decomposition departs from the traditional
 hierarchical skeleton structures and instead approximates an input
-data matrix **A** ∈ $\mathbb{R}^{3S \times N}$ as a product of two factors: **A** ≈ **BC**, where
-**B** ∈ $\mathbb{R}^{3S \times 4P}$, **C** ∈ $\mathbb{R}^{4P \times N}$. The input matrix **A** contains the x, y, z
+data matrix $\mathbf{A}$ ∈ $\mathbb{R}^{3S \times N}$ as a product of two factors: $\mathbf{A}$ ≈ $\mathbf{BC}$, where
+$\mathbf{B}$ ∈ $\mathbb{R}^{3S \times 4P}$, $\mathbf{C}$ ∈ $\mathbb{R}^{4P \times N}$. The input matrix $\mathbf{A}$ contains the x, y, z
 coordinates of the 𝑆 input shapes with 𝑁 vertices; the 𝑃 is the
-number of proxy-bones. The matrices **B** and **C** have special 
-structure: **B** is typically dense and stacks the skinning transformations;
-**C** is typically sparse and combines the skinning weights with the
+number of proxy-bones. The matrices $\mathbf{B}$ and $\mathbf{C}$ have special 
+structure: $\mathbf{B}$ is typically dense and stacks the skinning transformations;
+$\mathbf{C}$ is typically sparse and combines the skinning weights with the
 rest pose. The problem of “skinning decomposition” can be defined
-as finding the factors **B** and **C** for a given **A**. The state-of-the-art
+as finding the factors $\mathbf{B}$ and $\mathbf{C}$ for a given $\mathbf{A}$. The state-of-the-art
 method for solving this problem is implemented in the open source
 "Dem Bones" library [Electronic Arts [n. d.]; Le and Deng 2012]
 which has been integrated in Maya, Houdini and many other tools.
@@ -129,16 +129,16 @@ Bones solver. We can even lower the number of proxy-bones to
 20 and still obtain similar accuracy as Dem Bones, but we needed
 more significant savings. Our key finding to report in this paper
 is that we can introduce sparsity constraints also on the transformations,
-i.e., zero-out about 90% of the coefficients of **B** and still
+i.e., zero-out about 90% of the coefficients of $\mathbf{B}$ and still
 match the accuracy of the Dem Bone results (this is in addition
-to the sparsity of **C**, i.e., both **B** and **C** are now sparse). This 
+to the sparsity of $\mathbf{C}$, i.e., both $\mathbf{B}$ and $\mathbf{C}$ are now sparse). This 
 additional sparsification is straightforward to implement as part of
 the constraint-projection step. Even when accounting for the overhead
 of sparse data structures, this represents significant savings at
 runtime. To our knowledge, this additional “skinning transformation
 sparsification” has not been explored before and we propose
 to name it “compressed skinning” to distinguish it from previous
-skinning decomposition methods which compute dense **B**.
+skinning decomposition methods which compute dense $\mathbf{B}$.
 
 Our strategy of leveraging deep learning optimizers allows for a
 compact implementation in PyTorch [Paszke et al. 2019] with automatic
@@ -157,7 +157,7 @@ from the classical L2 norm to an Lp norm with higher p. When we
 changed the norm to L12 and increased the number of influences to
 32, the maximal error dropped by more than 50 times compared to
 Dem Bones, allowing us to recover even fine wrinkles in the original
-blendshapes, at the cost of more non-zeros weights in matrix **C**.
+blendshapes, at the cost of more non-zeros weights in matrix $\mathbf{C}$.
 However, our main focus is not improvements of quality but rather
 run-time efficiency.
 
@@ -305,121 +305,137 @@ skinning transformations.
 
 ## 3 - FRAMEWORK
 
-We start by writing down the formula for converting 𝑐𝑘 into M𝑗. This will also help clarify the
-framework of our approach and explain the setup for our new compressed skinning decomposition
+We start by writing down the formula for converting $c_k$ into $\mathbf{M}_j$.
+This will also help clarify the framework of our approach and
+explain the setup for our new compressed skinning decomposition
 algorithm (Sec. 4).
 
-We introduced the problem of skinning decomposition via a succinct abstraction using matrices
-A ∈ R3𝑆×𝑁, B ∈ R3𝑆×4𝑃 and C ∈ R4𝑃×𝑁. The matrix A contains vˆ𝑘,𝑖 − vˆ0,𝑖 and the matrices B, C have
-the following structure:
+We introduced the problem of skinning decomposition via a succinct
+abstraction using matrices $\mathbf{A}$ ∈ $\mathbb{R}^{3S \times N}$, $\mathbf{B}$ ∈ $\mathbb{R}^{3S \times 4P}$ and
+$\mathbf{C}$ ∈ $\mathbb{R}^{4P \times N}$. The matrix $\mathbf{A}$ contains $\mathbf{\hat{v}}_{k,i}$ − $\mathbf{\hat{v}}_{0,i}$ and the matrices
+$\mathbf{B}$, $\mathbf{C}$ have the following structure:
 
-B =
-[ Nˆ 1,1 ... Nˆ 1,𝑃
-  ...      ...
-  Nˆ 𝑆,1 ... Nˆ 𝑆,𝑃 ]
+$$
+\mathbf{B} = 
+\begin{bmatrix} 
+\hat{N}_{1,1} & \hat{N}_{1,2} & \cdots & \hat{N}_{1,P} \\ 
+\vdots & \vdots & \ddots & \vdots \\ 
+\hat{N}_{S,1} & \hat{N}_{S,2} & \cdots & \hat{N}_{S,P}
+\end{bmatrix}
+\quad
+\mathbf{C} = 
+\begin{bmatrix}
+w_{1,1}\mathbf{v}_{0,1} & \cdots & w_{N,1}\mathbf{v}_{0,N} \\
+\vdots & \ddots & \vdots \\
+w_{1,P}\mathbf{v}_{0,1} & \cdots & w_{N,P}\mathbf{v}_{0,N}
+\end{bmatrix}
+\tag{3}
+$$
 
-C =
-[ 𝑤1,1v0,1 ... 𝑤𝑁,1v0,𝑁
-  ...         ...
-  𝑤1,𝑃v0,1 ... 𝑤𝑁,𝑃v0,𝑁 ]
+The matrices $\hat{N}_{k,j} \in \mathbb{R}^{3 \times 4}$ are defined as $\hat{N}_{k,j} = \mathbf{I} + \mathbf{N}_{k,j}$, where $\mathbf{I} \in \mathbb{R}^{3 \times 4}$ is a $3 \times 3$ identity matrix extended with a column of zeros. With this notation, the formula $\mathbf{B}\mathbf{C} = \mathbf{A}$ is equivalent to:
 
-(3)
+$$
+\sum_{j=1}^{P} w_{i,j} (\mathbf{I} + \mathbf{N}_{k,j})\mathbf{v}_{0,i} = \hat{\mathbf{v}}_{k,i} \tag{4}
+$$
 
-The matrices Nˆ 𝑘,𝑗 ∈ R3×4 are defined as Nˆ 𝑘,𝑗 = I + N𝑘,𝑗, where I ∈ R3×4 is a 3 × 3 identity matrix
-extended with a column of zeros. With this notation, the formula BC = A is equivalent to:
+Due to the fact that $\sum_{j} w_{i,j}\mathbf{I}\mathbf{v}_{0,i} = \hat{\mathbf{v}}_{0,i}$ which follows from the partition of unity of the skinning weights, Eq. 4 is also equivalent to:
 
-𝑃∑︁𝑗=1 𝑤𝑖,𝑗 (I + N𝑘,𝑗 )v0,𝑖 = vˆ𝑘,𝑖 (4)
+$$
+\sum_{j=1}^{P} w_{i,j}\mathbf{N}_{k,j}\mathbf{v}_{0,i} = \hat{\mathbf{v}}_{k,i} - \hat{\mathbf{v}}_{0,i} \tag{5}
+$$
 
-Due to the fact that ˝𝑗 𝑤𝑖,𝑗Iv0,𝑖 = vˆ0,𝑖 which follows from the partition of unity of the skinning weights,
-Eq. 4 is also equivalent to:
-
-𝑃∑︁𝑗=1 𝑤𝑖,𝑗N𝑘,𝑗v0,𝑖 = vˆ𝑘,𝑖 − vˆ0,𝑖 (5)
-
-which shows that the transformations N𝑘,1, ... , N𝑘,𝑃 represent exactly the 𝑘-th delta-shape
-vˆ𝑘,𝑖 − vˆ0,𝑖 (Eq. 1). Intuitively, the subtraction of the identities I corresponds to subtraction of the rest
+which shows that the transformations $\mathbf{N}_{k,1}, ... , \mathbf{N}_{k,P}$ represent exactly the $k$-th delta-shape
+$\hat{\mathbf{v}}_{k,i} - \hat{\mathbf{v}}_{0,i}$ (Eq. 1). Intuitively, the subtraction of the identities $\mathbf{I}$ corresponds to subtraction of the rest
 pose. This is related to the fact that linear blend skinning returns the rest-pose for identity
-transformations, while Eq. 1 returns the rest-pose for zero blendweights 𝑐𝑘.
+transformations, while Eq. 1 returns the rest-pose for zero blendweights $c_k$.
 
-Let us now assume that we have solved for 𝑤𝑖,𝑗 and N𝑘,𝑗 that satisfy Eq. 5 and all of the skinning weight
+Let us now assume that we have solved for $w_{i,j}$ and $\mathbf{N}_{k,j}$ that satisfy Eq. 5 and all of the skinning weight
 constraints (this will be discussed in more detail in Sec. 4). Now we just need a formula to compute the
 final skinning transformations. This formula can be derived by algebraic manipulations of Eq. 1:
 
-vˆ0,𝑖 + 𝑆∑︁𝑘=1 𝑐𝑘 (vˆ𝑘,𝑖 − vˆ0,𝑖) = vˆ0,𝑖 + 𝑆∑︁𝑘=1 𝑐𝑘 𝑃∑︁𝑗=1 𝑤𝑖,𝑗N𝑘,𝑗v0,𝑖
-= 𝑃∑︁𝑗=1 𝑤𝑖,𝑗 I + 𝑆∑︁𝑘=1 𝑐𝑘N𝑘,𝑗! v0,𝑖 (6)
+$$
+\begin{aligned}
+\hat{\mathbf{v}}_{0,i} + \sum_{k=1}^{S} c_k (\hat{\mathbf{v}}_{k,i} - \hat{\mathbf{v}}_{0,i}) &= \hat{\mathbf{v}}_{0,i} + \sum_{k=1}^{S} c_k \sum_{j=1}^{P} w_{i,j}\mathbf{N}_{k,j}\mathbf{v}_{0,i} \\
+&= \sum_{j=1}^{P} w_{i,j} \left(\mathbf{I} + \sum_{k=1}^{S} c_k\mathbf{N}_{k,j}\right) \mathbf{v}_{0,i}
+\end{aligned}
+\tag{6}
+$$
 
-Therefore, if we define the final skinning transformations M𝑗 as:
+Therefore, if we define the final skinning transformations $\mathbf{M}_j$ as:
 
-M𝑗 = I + 𝑆∑︁𝑘=1 𝑐𝑘N𝑘,𝑗 (7)
+$$
+\mathbf{M}_j = \mathbf{I} + \sum_{k=1}^{S} c_k\mathbf{N}_{k,j} \tag{7}
+$$
 
-for 𝑗 = 1, ... , 𝑃, the linear blend skinning formula (Eq. 2) produces the exact same result as the blending
+for $j = 1, ... , P$, the linear blend skinning formula (Eq. 2) produces the exact same result as the blending
 of the blendshapes, as shown in Eq. 6.
 
-The flowchart of our method is in Figure 2. A limitation of our method compared to a standard skinning
-implementation is the need to evaluate Eq. 7 on the CPU. In the case of dense N𝑘,𝑗, as with Dem Bones
-implementation, this is a dense matrix-vector product. We propose sparse N𝑘,𝑗 in which case this becomes
-a sparse matrix-vector product. In either case, the resulting M𝑗 are dense and are passed to a standard
-skinning shader. In typical character animation systems, facial animation is usually composited with a
-head (or neck) transformations and full-body skinning. This can be accomplished by multiplying our M𝑗
-with the head transformation on the CPU, as in standard hierarchical skeletal animation.
+The flowchart of our method is in Figure 2. A limitation of our
+method compared to a standard skinning implementation is the
+need to evaluate Eq. 7 on the CPU. In the case of dense $\mathbf{N}_{k,j}$, as
+with Dem Bones implementation, this is a dense matrix-vector
+product. We propose sparse $\mathbf{N}_{k,j}$ in which case this becomes a sparse
+matrix-vector product. In either case, the resulting $\mathbf{M}_j$ are dense
+and are passed to a standard skinning shader. In typical character
+animation systems, facial animation is usually composited with a
+head (or neck) transformations and full-body skinning. This can be
+accomplished by multiplying our $\mathbf{M}_j$ with the head transformation
+on the CPU, as in standard hierarchical skeletal animation.
 
-In summary, we have converted the delta-blendshape model (Eq. 1) to linear blend skinning. This
-conversion is exact only if Eq. 5 is satisfied exactly; in practice there will be some errors, but we will
-minimize them to ensure a visually pleasing approximation of the original blendshape model. Our key
-contribution (and the rationale behind the name “Compressed Skinning”) is that most of our final N𝑘,𝑗
-transformations will be zero, enabling us to realize significant savings compared to dense methods such
-as Dem Bones.
+In summary, we have converted the delta-blendshape model
+(Eq. 1) to linear blend skinning. This conversion is exact only if
+Eq. 5 is satisfied exactly; in practice there will be some errors, but
+we will minimize them to ensure a visually pleasing approximation
+of the original blendshape model. Our key contribution (and the
+rationale behind the name "Compressed Skinning") is that most of
+our final $\mathbf{N}_{k,j}$ transformations will be zero, enabling us to realize
+significant savings compared to dense methods such as Dem Bones.
 
-3.1 Transformation representation
+### 3.1 Transformation representation
 
-The most general choice for N𝑘,𝑗 are general R3×4 matrices, but some authors proposed restricting the
-3 × 3 components to rotations [Le and Deng 2012]. This works well for general animation sequences
-which are not driven by delta-blending, but our approach relies on the linear blending in Eq. 7. Even if
-we constrained N𝑘,𝑗 to rotations, the resulting M𝑗 will not be rotations due to Eq. 7.
+The most general choice for $\mathbf{N}_{k,j}$ are general $\mathbb{R}^{3 \times 4}$ matrices, but
+some authors proposed restricting the $3 \times 3$ components to rotations
+[Le and Deng 2012]. This works well for general animation
+sequences which are not driven by delta-blending, but our approach
+relies on the linear blending in Eq. 7. Even if we constrained $\mathbf{N}_{k,j}$
+to rotations, the resulting $\mathbf{M}_j$ will not be rotations due to Eq. 7.
 
-Therefore, in our final method we chose to use the following class of transformations:
+Therefore, in our final method we chose to use the following class
+of transformations:
 
-N𝑘,𝑗 =
-[ 0   −𝑟𝑘,𝑗,3  𝑟𝑘,𝑗,2  𝑡𝑘,𝑗,1
-  𝑟𝑘,𝑗,3  0   −𝑟𝑘,𝑗,1  𝑡𝑘,𝑗,2
- −𝑟𝑘,𝑗,2  𝑟𝑘,𝑗,1  0   𝑡𝑘,𝑗,3 ]
+$$
+\mathbf{N}_{k,j} =
+\begin{bmatrix}
+0 & -r_{k,j,3} & r_{k,j,2} & t_{k,j,1} \\
+r_{k,j,3} & 0 & -r_{k,j,1} & t_{k,j,2} \\
+-r_{k,j,2} & r_{k,j,1} & 0 & t_{k,j,3}
+\end{bmatrix}
+\tag{8}
+$$
 
-(8)
+using only three degrees of freedom for the linearized rotation
+$(r_{k,j,:})$ [Goldstein et al. 2002] and another three for the translation
+$(t_{k,j,:})$. This class of transformations is closed under linear blending,
+i.e., linear combination of transformations of the form of Eq. 8
+produces another transformation of the same form. This means
+that Eq. 7 can work with the 6-dimensional representation in Eq. 8
+and compute nothing but plain linear blending at run-time. This is
+faster than e.g. quaternion interpolation of rotations, which requires
+a projection/normalization step and safeguards to ensure shortest-path
+interpolation [Buss and Fillmore 2001]. In our case, linear
+blending is correct because the original blendshapes were designed
+to be blended linearly (Eq. 1); non-linearities such as jaw opening
+are handled in the rig, which we treat as a black box. This is an
+efficient approach to convert blendshape models into linear blend
+skinning which also lends itself to a well structured code.
 
-using only three degrees of freedom for the linearized rotation (𝑟𝑘,𝑗,:) [Goldstein et al. 2002] and another
-three for the translation (𝑡𝑘,𝑗,:). This class of transformations is closed under linear blending, i.e., linear
-combination of transformations of the form of Eq. 8 produces another transformation of the same form.
-This means that Eq. 7 can work with the 6-dimensional representation in Eq. 8 and compute nothing but
-plain linear blending at run-time. This is faster than e.g. quaternion interpolation of rotations, which
-requires a projection/normalization step and safeguards to ensure shortest-path interpolation [Buss and
-Fillmore 2001].
+![Process](images/process.png)
 
-In our case, linear blending is correct because the original blendshapes were designed to be blended
-linearly (Eq. 1); non-linearities such as jaw opening are handled in the rig, which we treat as a black box.
-This is an efficient approach to convert blendshape models into linear blend skinning which also lends
-itself to a well structured code.
+> **Figure 2:** The skinning decomposition is pre-computed offline (left). On the end-user device, we first
+> load the pre-computed $w_{i,j}$ and $\mathbf{N}_{k,j}$. Then, for each animation frame (runtime, right), we obtain $c_k$ from
+> the rig and compute $\mathbf{M}_j$. The skinning transformations $\mathbf{M}_j$ along with the rest-pose $\mathbf{v}_{0,i}$ and weights
+> $w_{i,j}$ are passed to linear blend skinning module running on the GPU.
 
-Pre-processing
-rest pose 𝒗0,𝑖
-blendshapes 𝒗𝑘,𝑖
-transformations 𝐍𝑘,𝑗
-weights 𝑤𝑖,𝑗
-offline optimization
-save
-
-Runtime
-load
-Animation & rig: 𝑐𝑘
-𝐌𝑗 = 𝐈 + ∑_{𝑘=1}^{𝑆} 𝑐𝑘𝐍𝑘,𝑗
-CPU
-∑_{𝑗=1}^{𝑃} 𝑤𝑖,𝑗𝐌𝑗𝒗0,𝑖
-GPU
-𝑤𝑖,𝑗, 𝒗0,𝑖
-CPU
-
-Figure 2: The skinning decomposition is pre-computed offline (left). On the end-user device, we first
-load the pre-computed 𝑤𝑖,𝑗 and N𝑘,𝑗. Then, for each animation frame (runtime, right), we obtain c𝑘 from
-the rig and compute M𝑗. The skinning transformations M𝑗 along with the rest-pose v0,𝑖 and weights
-𝑤𝑖,𝑗 are passed to linear blend skinning module running on the GPU.
 
 ## 4 - COMPRESSED SKINNING DECOMPOSITION
 
