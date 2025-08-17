@@ -51,6 +51,8 @@ class SkinCompressor:
         #  results, whereas higher values lead to smoother results. That means that alpha values
         #  should be lower for high density meshes and higher for low density meshes.
         #  Can we procedurally determine the alpha value based on mesh density and sharpness?
+        #  We might be able to use the paper "Line Direction Matters: An Argument For The Use Of Principal Directions In 3D Line Drawings"
+        #  however this should be done in the class responsible for mesh data
         self.alpha_values = {"aura": 10, "jupiter": 10, "proteus": 50, "bowen": 50}
         self.alpha = self.alpha_values[self.model]
 
