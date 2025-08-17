@@ -9,10 +9,7 @@
 ![Method comparison](images/comparison.png)
 
 
-> **Figure 1:** Starting from a random initialization of skinning weights, our method converges to a linear
->blend skinning approximation of input blendshapes. The accuracy and visual quality of our results is
->comparable to the state-of-the-art (Dem Bones), but introduces significantly smaller run-time
->overheads. In the figure, each color visualizes the influence of one bone, with 40 bones total.
+> **Figure 1: Starting from a random initialization of skinning weights, our method converges to a linear blend skinning approximation of input blendshapes. The accuracy and visual quality of our results is comparable to the state-of-the-art (Dem Bones), but introduces significantly smaller run-time overheads. In the figure, each color visualizes the influence of one bone, with 40 bones total.**
 
 
 ## ABSTRACT
@@ -431,10 +428,7 @@ skinning which also lends itself to a well structured code.
 
 ![Process](images/process.png)
 
-> **Figure 2:** The skinning decomposition is pre-computed offline (left). On the end-user device, we first
-> load the pre-computed $w_{i,j}$ and $\mathbf{N}_{k,j}$. Then, for each animation frame (runtime, right), we obtain $c_k$ from
-> the rig and compute $\mathbf{M}_j$. The skinning transformations $\mathbf{M}_j$ along with the rest-pose $\mathbf{v}_{0,i}$ and weights
-> $w_{i,j}$ are passed to linear blend skinning module running on the GPU.
+> **Figure 2: The skinning decomposition is pre-computed offline (left). On the end-user device, we first load the pre-computed $w_{i,j}$ and $\mathbf{N}_{k,j}$. Then, for each animation frame (runtime, right), we obtain $c_k$ from the rig and compute $\mathbf{M}_j$. The skinning transformations $\mathbf{M}_j$ along with the rest-pose $\mathbf{v}_{0,i}$ and weights $w_{i,j}$ are passed to linear blend skinning module running on the GPU.**
 
 
 ## 4 - COMPRESSED SKINNING DECOMPOSITION
@@ -523,63 +517,71 @@ that higher $p$ can produce non-smooth results; therefore, we use
 $p = 2$ by default.
 
 ![Dembones comparison visual](images/dembones_comparison_visual.png)
-> **Figure 3:** Our method leads to results of acceptable visual quality on various rigs and facial expressions,
-> with errors comparable to Dem Bones (red color corresponds to error of 5mm or more). However, our
-> method enables more efficient run-time.
+> **Figure 3: Our method leads to results of acceptable visual quality on various rigs and facial expressions, with errors comparable to Dem Bones (red color corresponds to error of 5mm or more). However, our method enables more efficient run-time.**
 
 ![Model comparison graphs](images/model_comparison_graphs.png)
-> **Figure 4:** Histograms of the errors of our method (dark blue) and Dem Bones (light blue) in centimeters.
-> Our method achieves lower errors despite sparse skinning transformations.
+> **Figure 4: Histograms of the errors of our method (dark blue) and Dem Bones (light blue) in centimeters. Our method achieves lower errors despite sparse skinning transformations.**
 
 ## 5 - RESULTS
 
-We use two error metrics to quantify the accuracy of a skinning decomposition; mean absolute error
-(MAE) and maximum absolute error (MXE). The MAE is the mean of 𝐸𝑖,𝑘 (Eq. 9) and tells us what error can
-we expect for a randomly chosen vertex and blendshape. The MXE = max𝑖,𝑘 𝐸𝑖,𝑘 measures the worst error.
-These metrics correspond to 𝐿1 and 𝐿∞ norms. Note that in our task, we assume that our input
-blendshapes have been carefully prepared and are thus treated as noise-free ground truth, i.e., we
-cannot dismiss large errors as outliers.
+We use two error metrics to quantify the accuracy of a skinning
+decomposition; mean absolute error (MAE) and maximum absolute
+error (MXE). The MAE is the mean of $E_{i,k}$ (Eq. 9) and tells us what
+error can we expect for a randomly chosen vertex and blendshape.
+The MXE = $\max_{i,k} E_{i,k}$ measures the worst error. These metrics
+correspond to $L^1$ and $L^{\infty}$ norms. Note that in our task, we assume
+that our input blendshapes have been carefully prepared and are
+thus treated as noise-free ground truth, i.e., we cannot dismiss large
+errors as outliers.
 
-In our first set of experiments, we set the total number of proxy-bones to 40 for both Dem Bones and
-our method, but we limit our method to no more than 6000 non-zeros in the matrix B. This means that
-our method has about 10× fewer transformations to work with than Dem Bones, while achieving similar
-or better MAE and MXE (Table 1). We set the number of influences 𝐾 to 8 for both Dem Bones and our
-method. Rendering of the resulting shapes confirms that the results of Dem Bones and our method are
-visually similar (Figure 3) and even harder to discern in an animation (see the accompanying video).
-We plot the corresponding error histograms in Figure 4.
+In our first set of experiments, we set the total number of proxy-bones
+to 40 for both Dem Bones and our method, but we limit our
+method to no more than 6000 non-zeros in the matrix $\mathbf{B}$. This means
+that our method has about 10× fewer transformations to work with
+than Dem Bones, while achieving similar or better MAE and MXE
+(Table 1). We set the number of influences $K$ to 8 for both Dem
+Bones and our method. Rendering of the resulting shapes confirms
+that the results of Dem Bones and our method are visually similar
+(Figure 3) and even harder to discern in an animation (see the
+accompanying video). We plot the corresponding error histograms
+in Figure 4.
 
-To optimize our compressed skinning decompositions, we used 20k iterations of Adam with projection
-(Sec. 4) with lr = 10−3, 𝛽1 = 0.9, 𝛽2 = 0.9; the whole optimization takes several minutes on a single
-A6000 GPU. Dem Bones runs in under a minute on the CPU. The pre-processing times are relatively
-unimportant compared to the reduction of the run-time overhead of blending skinning transformations
-(Eq. 7). This formula can be expressed as matrix multiplication of the coefficients 𝑐𝑘 with the matrix
-B. With our method, the B is sparse, but with Dem Bones and other previous methods, the matrix B is
-dense. Sparse matrix data structures (we use compressed row storage) need to store additional index
-information; we account for these in Table 2. Despite this, sparse data structures offer 5 - 7× memory
-savings.
+To optimize our compressed skinning decompositions, we used
+20k iterations of Adam with projection (Sec. 4) with lr = $10^{-3}$,
+$\beta_1 = 0.9$, $\beta_2 = 0.9$; the whole optimization takes several minutes
+on a single A6000 GPU. Dem Bones runs in under a minute on the
+CPU. The pre-processing times are relatively unimportant compared
+to the reduction of the run-time overhead of blending skinning
+transformations (Eq. 7). This formula can be expressed as
+matrix multiplication of the coefficients $c_k$ with the matrix $\mathbf{B}$. With
+our method, the $\mathbf{B}$ is sparse, but with Dem Bones and other previous
+methods, the matrix $\mathbf{B}$ is dense. Sparse matrix data structures
+(we use compressed row storage) need to store additional index
+information; we account for these in Table 2. Despite this, sparse
+data structures offer 5 - 7× memory savings. In Table 3, we report
+the run-time performance measured on Snapdragon 652, which is
+a representative of our target low-spec mobile platforms. We can
+see that in addition to the memory savings, sparse storage offers
+also about 2 - 3× speed-up and brings the transformation blending
+times on par with rig evaluation (Table 3). To put the timings in
+context, with 120Hz refresh rate, the total time budget for a frame
+is only about 8 ms and this needs to accommodate everything, including
+full- body animation, rendering, background and typically
+also multiple characters.
 
-In Table 3, we report the run-time performance measured on Snapdragon 652, which is a
-representative of our target low-spec mobile platforms. We can see that in addition to the memory
-savings, sparse storage offers also about 2 - 3× speed-up and brings the transformation blending times
-on par with rig evaluation (Table 3). To put the timings in context, with 120Hz refresh rate, the total
-time budget for a frame is only about 8𝑚𝑠 and this needs to accommodate everything, including full-
-body animation, rendering, background and typically also multiple characters.
-
-Table 1: Statistics of our testing rigs and achieved fitting accuracy for our method and Dem Bones.
-Both the maximum (MXE) and mean (MAE) errors are in millimeters, with human-sized head models.
+> **Table 1: Statistics of our testing rigs and achieved fitting accuracy for our method and Dem Bones. Both the maximum (MXE) and mean (MAE) errors are in millimeters, with human-sized head models.**
 
     | Our method | Dem Bones |
     |------------|-----------|
-    | Model      | Vertices (𝑁) | Shapes (𝑆) | Bones (𝑃) | Transforms | MXE   | MAE    | Transforms | MXE   | MAE    |
+    | Model      | Vertices (N)   | Shapes (S)  | Bones (P)  | Transforms | MXE   | MAE    | Transforms | MXE   | MAE    |
     |------------|----------------|-------------|------------|------------|-------|--------|------------|-------|--------|
     | Aura       | 5944           | 267         | 40         | 1000       | 5.82  | 0.0384 | 10680      | 5.65  | 0.0391 |
-    | Jupiter     | 5944           | 319         | 40         | 1000       | 8.26  | 0.0297 | 12760      | 7.64  | 0.0263 |
+    | Jupiter    | 5944           | 319         | 40         | 1000       | 8.26  | 0.0297 | 12760      | 7.64  | 0.0263 |
     | Proteus    | 23735          | 287         | 40         | 1000       | 4.8   | 0.03   | 11480      | 6.23  | 0.0305 |
     | Bowen      | 23735          | 253         | 40         | 1000       | 5.99  | 0.0339 | 10120      | 10.75 | 0.0459 |
     | Proteus HD | 23735          | 287         | 200        | 57400      | 0.06  | 0.0147 | 57400      | 3.45  | 0.0174 |
 
-Table 2: Memory requirements for sparse (our method) and dense transformations (Dem Bones), using
-40 bones in both cases.
+> **Table 2: Memory requirements for sparse (our method) and dense transformations (Dem Bones), using 40 bones in both cases.**
 
     | Model   | Sparse | Dense  | Ratio  |
     |---------|--------|--------|--------|
@@ -588,62 +590,73 @@ Table 2: Memory requirements for sparse (our method) and dense transformations (
     | Proteus | 85k    | 551k   | 6.5×   |
     | Bowen   | 87k    | 486k   | 5.6×   |
 
-Table 3: Run-time speed measurements for sparse (our method) and dense transformations (Dem
-Bones), using 40 bones in both cases. We also report the rig evaluation time.
+> **Table 3: Run-time speed measurements for sparse (our method) and dense transformations (Dem Bones), using 40 bones in both cases. We also report the rig evaluation time.**
 
     | Model   | Rig     | Sparse  | Dense   | Speed-up |
     |---------|---------|---------|---------|----------|
-    | Aura    | 164𝜇𝑠 | 160𝜇𝑠 | 552𝜇𝑠 | 3.5×     |
-    | Jupiter | 274𝜇𝑠 | 251𝜇𝑠 | 653𝜇𝑠 | 2.6×     |
-    | Proteus | 201𝜇𝑠 | 171𝜇𝑠 | 585𝜇𝑠 | 3.4×     |
-    | Bowen   | 159𝜇𝑠 | 185𝜇𝑠 | 520𝜇𝑠 | 2.8×     |
+    | Aura    | 164𝜇𝑠   | 160𝜇𝑠    | 552𝜇𝑠   | 3.5×     |
+    | Jupiter | 274𝜇𝑠   | 251𝜇𝑠    | 653𝜇𝑠   | 2.6×     |
+    | Proteus | 201𝜇𝑠   | 171𝜇𝑠    | 585𝜇𝑠   | 3.4×     |
+    | Bowen   | 159𝜇𝑠   | 185𝜇𝑠    | 520𝜇𝑠   | 2.8×     |
 
-Another option to consider instead of our method would be to decrease the number of bones 𝑃 in Dem
-Bones. We tried this with 𝑃 = 20, 10, 5 and even 1 (i.e., single transformation for the entire model,
-which we tried just out of curiosity, the visual quality is of course insufficient). The results are in
-Table 4. We can see the errors increase rather quickly, e.g., with the Aura model, the MXE increased
-from 0.565 (𝑃 = 40) to 0.89 (𝑃 = 20) and the MAE increases similarly from 0.00391 to 0.0058
-(Figure 5). Our method enables run-time efficiencies while achieving similar or even lower errors than
-Dem Bones.
+Another option to consider instead of our method would be
+to decrease the number of bones $P$ in Dem Bones. We tried this
+with $P = 20, 10, 5$ and even $1$ (i.e., single transformation for the
+entire model, which we tried just out of curiosity, the visual quality
+is of course insufficient). The results are in Table 4. We can see
+the errors increase rather quickly, e.g., with the Aura model, the
+MXE increased from 0.565 ($P = 40$) to 0.89 ($P = 20$) and the MAE
+increases similarly from 0.00391 to 0.0058 (Figure 5). Our method
+enables run-time efficiencies while achieving similar or even lower
+errors than Dem Bones.
 
-Another potential alternative to our method is to sparsify the skinning transformations after they
-have been computed by Dem Bones [Electronic Arts [n. d.]]. To evaluate this approach, we have
-selected thresholds to zero-out translations and rotations to obtain similar sparsity as our method;
-specifically we have set the translation threshold as 1mm and the rotation threshold as 1 degree.
-These sparsified transformations lead to MAEs which are 1.5 to 3 times larger than our method
-(Table 5).
+Another potential alternative to our method is to sparsify the
+skinning transformations after they have been computed by Dem
+Bones [Electronic Arts [n. d.]]. To evaluate this approach, we have
+selected thresholds to zero-out translations and rotations to obtain
+similar sparsity as our method; specifically we have set the translation
+threshold as 1mm and the rotation threshold as 1 degree. These
+sparsified transformations lead to MAEs which are 1.5 to 3 times
+larger than our method (Table 5).
 
-    Original   Our method   DEM, P = 40   DEM, P = 20
+![Error comparison](images/error_comparison.png)
 
-Figure 5: Decreasing the number of bones in Dem Bones from 40 to 20 increases the error
-significantly.
+> **Figure 5: Decreasing the number of bones in Dem Bones from 40 to 20 increases the error significantly.**
 
-In our “High-Detail” experiment, we tried to minimize MXE by setting $p = 12$ in Eq. 9, using 200
-proxy-bones, disabling the sparsification of our transformations and setting $K = 32$. We used the same
-settings in Dem Bones and set smoothness to zero to achieve the highest accuracy. We used 500k
-iterations (2.5 hours on an A6000 GPU); Dem Bones still uses only about a minute on the CPU. The error
-metrics, reported as “Proteus HD” in Table 1, show that our $p = 12$ minimization achieved more than
-$50\times$ lower maximal error (MXE) than Dem Bones. The MAE errors are very similar ($0.00147$ vs.
-$0.00174$), suggesting that the maximal error is well localized. The visual impact of the larger MXE error
-is loss of details, such as the wrinkles caused by frowning (Figure 6).
+In our "High-Detail" experiment, we tried to minimize MXE
+by setting $p = 12$ in Eq. 9, using 200 proxy-bones, disabling the
+sparsification of our transformations and setting $K$ to 32. We used
+the same settings in Dem Bones and set smoothness to zero to
+achieve the highest accuracy. We used 500k iterations (2.5 hours
+on an A6000 GPU); Dem Bones still uses only about a minute on
+the CPU. The error metrics, reported as "Proteus HD" in Table 1,
+show that our $p = 12$ minimization achieved more than $50\times$ lower
+maximal error (MXE) than Dem Bones. The MAE errors are very
+similar ($0.00147$ vs. $0.00174$), suggesting that the maximal error is
+well localized. The visual impact of the larger MXE error is loss of
+details, such as the wrinkles caused by frowning (Figure 6).
 
-We have also implemented our method in Unity and benchmarked the runtimes on a modern Windows PC
-(AMD 3975WX and NVIDIA RTX 3080). To stress-test the system, we are displaying 10 copies of each of
-our 4 characters (Figure 7). Since both the CPU and GPU run concurrently, the final FPS is determined by
-the slower one; in all of our scenarios the CPU is the bottleneck (Table 6).
+We have also implemented our method in Unity and benchmarked
+the runtimes on a modern Windows PC (AMD 3975WX
+and NVIDIA RTX 3080). To stress-test the system, we are displaying
+10 copies of each of our 4 characters (Figure 7). Since both the
+CPU and GPU run concurrently, the final FPS is determined by
+the slower one; in all of our scenarios the CPU is the bottleneck
+(Table 6). Our method is $1.4\times$ faster than Dem Bones as well
+as Unity's native implementation of blendshapes. This implementation
+is optimized for cache coherency etc., but requires $4.2\times$
+longer GPU compute.
 
-Our method is $1.4\times$ faster than Dem Bones as well as Unity’s native implementation of
-blendshapes. This implementation is optimized for cache coherency etc., but requires $4.2\times$ longer
-GPU compute.
+![Micro details comparison](images/micro_details_comparison.png)
 
-    Original   Our Method   Dem Bones
 
-Figure 6: “Proteus HD” experiment: our method with 57400 transforms and $L_{12}$ norm captures
-finer detail than Dem Bones with the same number of transformations.
+> **Figure 6: “Proteus HD” experiment: our method with 57400 transforms and $L_{12}$ norm captures finer detail than Dem Bones with the same number of transformations.**
 
-Figure 7: Screenshot of our Unity app.
+![Unity screenshot](images/unity_screenshot.png)
 
-Table 4: Dem Bones results with lower numbers of bones $P$ (MXE / MAE in millimeters).
+> **Figure 7: Screenshot of our Unity app.**
+
+> **Table 4: Dem Bones results with lower numbers of bones $P$ (MXE / MAE in millimeters).**
 
     | Model   | P = 20      | P = 10      | P = 5      | P = 1      |
     |---------|-------------|-------------|------------|------------|
@@ -652,7 +665,7 @@ Table 4: Dem Bones results with lower numbers of bones $P$ (MXE / MAE in millime
     | Proteus | 11.1/0.054  | 11.4/0.070  | 11.5/0.090 | 29.6/0.168 |
     | Bowen   | 9.1/0.053   | 12.9/0.089  | 15.0/0.106 | 33.5/0.215 |
 
-Table 5: Errors with sparsified Dem Bones transformations (40 bones) in millimeters.
+> **Table 5: Errors with sparsified Dem Bones transformations (40 bones) in millimeters.**
 
     | Model    | Non-zeros | MXE  | MAE   |
     |----------|-----------|------|-------|
@@ -661,7 +674,7 @@ Table 5: Errors with sparsified Dem Bones transformations (40 bones) in millimet
     | Proteus  | 6273      | 6.12 | 0.047 |
     | Bowen    | 6520      | 10.72| 0.12  |
 
-Table 6: Performance on a Windows PC in FPS and milliseconds.
+> **Table 6: Performance on a Windows PC in FPS and milliseconds.**
 
     | Scenario         | FPS  | CPU  | GPU  |
     |------------------|------|------|------|
