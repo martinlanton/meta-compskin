@@ -1,0 +1,115 @@
+# Development Dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Linting and Formatting
+ruff>=0.1.6
+
+# Type Checking
+mypy>=1.7.0
+
+# Pre-commit hooks
+pre-commit>=3.5.0
+
+# Documentation
+sphinx>=7.2.0
+sphinx-rtd-theme>=2.0.0
+sphinx-autodoc-typehints>=1.25.0
+# Configuration file for the Sphinx documentation builder.
+#
+# For the full list of built-source_models configuration values, see the documentation:
+# https://www.sphinx-doc.org/en/master/usage/configuration.html
+
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../src'))
+
+# -- Project information -----------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+
+project = 'Compressed Skinning for Facial Blendshapes'
+copyright = '2024, Meta Reality Labs Research'
+author = 'Meta Reality Labs Research'
+release = '1.0.0'
+
+# -- General configuration ---------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
+
+extensions = [
+    'sphinx.ext.autodoc',           # Auto-generate documentation from docstrings
+    'sphinx.ext.napoleon',          # Support for Google and NumPy style docstrings
+    'sphinx.ext.viewcode',          # Add links to highlighted source code
+    'sphinx.ext.intersphinx',       # Link to other projects' documentation
+    'sphinx.ext.mathjax',           # Render math via JavaScript
+    'sphinx.ext.githubpages',       # Publish HTML docs source_models GitHub Pages
+    'sphinx_autodoc_typehints',     # Automatically document type hints
+]
+
+# Napoleon settings for Google-style docstrings
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False
+napoleon_include_init_with_doc = True
+napoleon_include_private_with_doc = False
+napoleon_include_special_with_doc = True
+napoleon_use_admonition_for_examples = True
+napoleon_use_admonition_for_notes = True
+napoleon_use_admonition_for_references = True
+napoleon_use_ivar = False
+napoleon_use_param = True
+napoleon_use_rtype = True
+napoleon_type_aliases = None
+napoleon_attr_annotations = True
+
+# Autodoc settings
+autodoc_default_options = {
+    'members': True,
+    'member-order': 'bysource',
+    'special-members': '__init__',
+    'undoc-members': True,
+    'exclude-members': '__weakref__'
+}
+autodoc_typehints = 'description'
+autodoc_typehints_description_target = 'documented'
+
+# Type hints settings
+always_document_param_types = True
+typehints_fully_qualified = False
+
+templates_path = ['_templates']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+
+# Intersphinx mapping
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
+    'torch': ('https://pytorch.org/docs/stable/', None),
+}
+
+# -- Options for HTML output -------------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
+
+html_theme = 'sphinx_rtd_theme'
+html_static_path = ['_static']
+
+html_theme_options = {
+    'navigation_depth': 4,
+    'collapse_navigation': False,
+    'sticky_navigation': True,
+    'includehidden': True,
+    'titles_only': False
+}
+
+# -- Options for LaTeX output ------------------------------------------------
+
+latex_elements = {
+    'papersize': 'letterpaper',
+    'pointsize': '10pt',
+    'preamble': r'''
+        \usepackage{amsmath}
+        \usepackage{amssymb}
+    ''',
+}
+
