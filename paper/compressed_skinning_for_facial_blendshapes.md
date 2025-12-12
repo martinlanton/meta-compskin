@@ -63,7 +63,7 @@ to corrective shapes needed to overcome the limitations of linear
 blending.
 
 Many data compression algorithms have been studied in the past,
-but real-time animation requires adecompression method that is
+but real-time animation requires a decompression method that is
 fast and integrates well with a GPU that performs the final rendering.
 Linear blend skinning decomposition methods [James and Twigg 2005]
 have been proposed to solve this problem for general

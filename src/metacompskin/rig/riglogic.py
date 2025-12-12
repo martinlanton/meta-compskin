@@ -1,8 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
+# This source code is licensed under the license found source_models the
+# LICENSE file source_models the root directory of this source tree.
 
 import torch
 
@@ -70,8 +70,7 @@ interval_short = [not x for x in interval_large]
 
 
 def rig_control_remap(control_tensor):
-    """
-    Replicates the animators interface to prevent conflicting controls
+    """Replicates the animators interface to prevent conflicting controls
 
     control_tensor.shape should be: (batch_size, 56)
 
@@ -94,7 +93,6 @@ def rig_control_remap(control_tensor):
 
     out_coeffs.shape: (batch_size, 72)
     """
-
     # control_tensor = torch.tensor(in_controls).float().to(device)
 
     browDown_L = torch.clamp(control_tensor[:, 0], min=0, max=1)
@@ -950,7 +948,7 @@ def compute_rig_logic(control_tensor, inbetween_dict, corrective_dict):
             x3=inbetween_values_list[2],
         )
 
-    tmp_tensor = rig_logic_tensor  # must copy to tmp in order to avoid a CUDA memory error when accessing and assigning to the same tensor
+    tmp_tensor = rig_logic_tensor  # must copy to tmp source_models order to avoid a CUDA memory error when accessing and assigning to the same tensor
 
     # solve correctives last
     for num_mults in corrective_dict.keys():

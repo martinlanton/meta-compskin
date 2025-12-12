@@ -1,14 +1,16 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
+# This source code is licensed under the license found source_models the
+# LICENSE file source_models the root directory of this source tree.
 
+import time
+
+import igl
 import numpy as np
 import scipy as sp
 import torch
-import time
-import igl
+
 import metacompskin.rig.riglogic as rl
 
 
@@ -116,7 +118,7 @@ def train(num_iter, power, alpha, beta=None, normalizeW=False):
 
         with torch.no_grad():
             Wcutoff = torch.topk(W, max_influences + 1, dim=0).values[-1, :]
-            Wmask = W > Wcutoff
+            Wmask = Wcutoff < W
             Wpruned = Wmask * W
             W.copy_(Wpruned)
             W.clamp_(min=0)
@@ -172,7 +174,7 @@ def generateXforms(weights, shapeXforms):
     #   weighted sum of blendshape transfomrs (3, 4 * num_bones)
     #
     # Z.transpose(0, 2, 1).reshape(3, -1) @ shapeXforms + np.array([np.eye(3, 4)] * nBones).transpose(1, 0, 2).reshape(3, -1)
-    #   add 1 to diagonals for every transform (befor was 0)
+    #   add 1 to diagonals for every transform (before was 0)
     res = Z.transpose(0, 2, 1).reshape(3, -1) @ shapeXforms + np.array(
         [np.eye(3, 4)] * nBones
     ).transpose(1, 0, 2).reshape(3, -1)
@@ -190,7 +192,7 @@ beta = None
 
 torch.manual_seed(seed)
 device = "cuda" if torch.cuda.is_available() else "cpu"
-npb = np.load(f"data/in/proteus.npz", allow_pickle=True)
+npb = np.load("../../tests/test_data/source_models/proteus.npz", allow_pickle=True)
 n_bs = npb["deltas"].shape[0]
 deltas = npb["deltas"].transpose(1, 0, 2).reshape(-1, n_bs * 3).transpose()
 
@@ -255,7 +257,7 @@ print(f"meanDelta {meanDelta}")
 inbetween_dict = npb["inbetween_info"].item()
 corrective_dict = npb["combination_info"].item()
 
-test_anim = np.load("data/in/test_anim.npz")
+test_anim = np.load("../../tests/test_data/source_models/test_anim.npz")
 # anim_weights num_frames x num_blendshapes
 # one weight per blendshape per frame
 anim_weights = rl.compute_rig_logic(
