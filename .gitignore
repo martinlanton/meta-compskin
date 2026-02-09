@@ -1,0 +1,226 @@
+# Comprehensive .gitignore for meta-compskin project
+# Based on Python best practices and project-specific needs
+
+# ============================================================================
+# Python
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================================================
+# Testing / Coverage
+# ============================================================================
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ============================================================================
+# IDEs
+# ============================================================================
+
+# JetBrains (PyCharm, IntelliJ IDEA)
+.idea/
+*.iml
+*.iws
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# OS-specific
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================================
+# Project-specific
+# ============================================================================
+
+# Maya temporary files
+*.pyc
+*.pyo
+*.tmp
+*.temp
+
+# Compressed output files (examples, not committed)
+output/
+*.npz
+!tests/test_data/**/*.npz  # Keep test data
+
+# Animation frames (generated, not committed)
+frames/
+*.obj
+!tests/test_data/**/*.obj  # Keep test OBJ fixtures
+!test_fixtures/**/*.obj    # Keep private test fixtures
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# ============================================================================
+# Virtual Environments
+# ============================================================================
+
+# venv
+venv/
+ENV/
+env/
+.venv
+
+# Conda
+conda-meta/
+.conda/
+
+# virtualenv
+.Python
+[Bb]in
+[Ii]nclude
+[Ll]ib
+[Ll]ib64
+[Ll]ocal
+[Ss]cripts
+pyvenv.cfg
+.venv
+pip-selfcheck.json
+
+# ============================================================================
+# Build artifacts
+# ============================================================================
+
+# Sphinx documentation
+docs/_build/
+
+# setuptools
+*.egg
+*.egg-info
+dist/
+build/
+*.whl
+
+# ============================================================================
+# Logs
+# ============================================================================
+
+# General
+*.log
+*.out
+*.err
+
+# ============================================================================
+# Temporary files
+# ============================================================================
+
+# General temporary files
+*.tmp
+*.bak
+*.swp
+*~.nib
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# ============================================================================
+# Security
+# ============================================================================
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Credentials
+*.pem
+*.key
+secrets.yml
+.secrets/
+
+# ============================================================================
+# End of .gitignore
+# ============================================================================

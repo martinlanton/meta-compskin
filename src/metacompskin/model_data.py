@@ -21,6 +21,7 @@ import numpy as np
 import numpy.typing as npt
 
 from metacompskin.constants import get_alpha_for_model
+from metacompskin.maya_loader import load_obj_with_maya
 
 # Validation constants for array shapes
 _SPATIAL_DIMS = 3  # X, Y, Z coordinates
@@ -337,3 +338,168 @@ class BlendshapeModelData:
         print(f"  rest_faces: {self.rest_faces.shape} {self.rest_faces.dtype}")
         print(f"  inbetween_info: {type(self.inbetween_info)} (dict)")
         print(f"  combination_info: {type(self.combination_info)} (dict)")
+
+
+class MayaBlendshapeModelData(BlendshapeModelData):
+    """Extension of BlendshapeModelData for loading from Maya OBJ files.
+
+    This class uses Maya's native API to load OBJ files, which provides
+    a foundation for future support of .ma and .mb files. It can operate
+    in two modes:
+
+    1. **Direct Mode** (maya_interpreter_path=None): Imports maya.cmds
+       directly. Use when running inside Maya or with mayapy.
+
+    2. **Subprocess Mode** (maya_interpreter_path provided): Spawns mayapy
+       as a subprocess to load files. Use when running in standard Python.
+
+    Example:
+        >>> from pathlib import Path
+        >>> from metacompskin.model_data import MayaBlendshapeModelData
+        >>>
+        >>> rest = Path("test_fixtures/maya/HEAD.obj")
+        >>> shapes = [Path(f"test_fixtures/maya/{s}.obj") for s in ["AU1", "AU2"]]
+        >>>
+        >>> # Running inside Maya or with mayapy
+        >>> model_data = MayaBlendshapeModelData.from_obj_files(rest, shapes)
+        >>>
+        >>> # Running in standard Python with mayapy path
+        >>> mayapy = Path("C:/Program Files/Autodesk/Maya2024/bin/mayapy.exe")
+        >>> model_data = MayaBlendshapeModelData.from_obj_files(
+        ...     rest, shapes, maya_interpreter_path=mayapy
+        ... )
+    """
+
+    @classmethod
+    def from_obj_files(
+        cls,
+        rest_obj_path: Path,
+        blendshape_paths: list[Path],
+        model_name: Optional[str] = None,
+        alpha: Optional[float] = None,
+        maya_interpreter_path: Optional[Path] = None,
+    ) -> "BlendshapeModelData":
+        """Create BlendshapeModelData from Maya OBJ files using Maya API.
+
+        This method uses Maya's native API to load OBJ files, which provides
+        a foundation for future support of .ma and .mb files. It can operate
+        in two modes:
+
+        1. **Direct Mode** (maya_interpreter_path=None): Imports maya.cmds
+           directly. Use when running inside Maya or with mayapy.
+
+        2. **Subprocess Mode** (maya_interpreter_path provided): Spawns mayapy
+           as a subprocess to load files. Use when running in standard Python.
+
+        Args:
+            rest_obj_path: Path to neutral pose OBJ (e.g., HEAD.obj).
+            blendshape_paths: List of paths to blendshape target OBJ files.
+            model_name: Optional model name. Defaults to rest_obj_path.stem.
+            alpha: Optional Laplacian regularization parameter.
+                Defaults to 10.0 or value from constants if model_name is known.
+            maya_interpreter_path: Optional path to mayapy executable
+                (e.g., "C:/Program Files/Autodesk/Maya2024/bin/mayapy.exe").
+                If None, assumes running inside Maya and imports maya.cmds.
+
+        Returns:
+            BlendshapeModelData instance with loaded geometry and computed deltas.
+
+        Raises:
+            FileNotFoundError: If any OBJ file or mayapy doesn't exist.
+            ValueError: If topology is inconsistent across OBJs or no blendshapes provided.
+            RuntimeError: If Maya import/loading fails.
+
+        Example:
+            >>> # Running inside Maya or with mayapy
+            >>> rest = Path("test_fixtures/maya/HEAD.obj")
+            >>> shapes = [Path(f"test_fixtures/maya/{s}.obj") for s in ["AU1", "AU2"]]
+            >>> model_data = MayaBlendshapeModelData.from_obj_files(rest, shapes)
+            >>> print(model_data.n_blendshapes)
+            2
+
+            >>> # Running in standard Python with mayapy path
+            >>> mayapy = Path("C:/Program Files/Autodesk/Maya2024/bin/mayapy.exe")
+            >>> model_data = MayaBlendshapeModelData.from_obj_files(
+            ...     rest, shapes, maya_interpreter_path=mayapy
+            ... )
+
+        Note:
+            Future versions will extend this to support .ma and .mb files by
+            updating the maya_loader module to handle additional file types.
+        """
+        # Validate inputs
+        if not rest_obj_path.exists():
+            raise FileNotFoundError(f"Rest OBJ file not found: {rest_obj_path}")
+
+        if len(blendshape_paths) == 0:
+            raise ValueError("At least one blendshape path must be provided")
+
+        for path in blendshape_paths:
+            if not path.exists():
+                raise FileNotFoundError(f"Blendshape OBJ file not found: {path}")
+
+        # Load rest mesh using Maya
+        rest_verts, rest_faces = load_obj_with_maya(
+            rest_obj_path, maya_interpreter_path
+        )
+
+        # Load all blendshapes and validate topology
+        shape_verts_list = []
+        for shape_path in blendshape_paths:
+            shape_verts, shape_faces = load_obj_with_maya(
+                shape_path, maya_interpreter_path
+            )
+
+            # Validate topology consistency: same vertex count
+            if shape_verts.shape[0] != rest_verts.shape[0]:
+                raise ValueError(
+                    f"Topology mismatch: {shape_path.name} has "
+                    f"{shape_verts.shape[0]} vertices, but rest mesh has "
+                    f"{rest_verts.shape[0]} vertices"
+                )
+
+            # Validate topology consistency: same face count
+            if shape_faces.shape[0] != rest_faces.shape[0]:
+                raise ValueError(
+                    f"Topology mismatch: {shape_path.name} has "
+                    f"{shape_faces.shape[0]} faces, but rest mesh has "
+                    f"{rest_faces.shape[0]} faces"
+                )
+
+            shape_verts_list.append(shape_verts)
+
+        # Compute deltas: shape_verts - rest_verts
+        deltas = np.array(
+            [shape_verts - rest_verts for shape_verts in shape_verts_list]
+        )
+
+        # Set default values for optional parameters
+        if model_name is None:
+            model_name = rest_obj_path.stem
+
+        if alpha is None:
+            # Try to get alpha from constants, otherwise use default
+            try:
+                alpha = get_alpha_for_model(model_name)
+            except (KeyError, ValueError):
+                alpha = 10.0
+
+        # Validate arrays before creating instance
+        cls._validate_arrays(
+            deltas=deltas,
+            rest_verts=rest_verts,
+            rest_faces=rest_faces,
+            inbetween_info={},
+            combination_info={},
+        )
+
+        # Return BlendshapeModelData instance
+        return cls(
+            deltas=deltas,
+            rest_verts=rest_verts,
+            rest_faces=rest_faces,
+            inbetween_info={},
+            combination_info={},
+            model_name=model_name,
+            alpha=alpha,
+        )
