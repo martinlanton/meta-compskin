@@ -901,8 +901,9 @@ As an AI agent working on this codebase, you MUST:
   - Class diagrams for new classes
   - Flowcharts for algorithms
 - [ ] Sphinx documentation regenerated and verified
-- [ ] Examples added to docstrings
-- [ ] README.md updated if user-facing changes
+- [ ] Examples added to docstrings for complex functionality
+- [ ] Committed both code changes and any documentation updates
+- [ ] GitHub Actions will deploy docs automatically on merge to main
 
 ## Project-Specific Guidelines
 
@@ -996,3 +997,226 @@ def create_tensor(data: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(data).float()  # Where does it go?
 ```
 
+## Documentation Maintenance
+
+### When to Rebuild Documentation
+
+Rebuild Sphinx API documentation when making changes to:
+- **Public API**: New classes, methods, functions
+- **Public method signatures**: Parameters, return types, type hints
+- **Module structure**: New modules, reorganization
+- **Docstrings**: Updates to public method documentation
+
+### How to Rebuild Documentation
+
+**Method 1: Using build script (Recommended)**
+```bash
+python scripts/build_docs.py
+```
+
+**Method 2: Using Makefile**
+```bash
+cd docs
+make clean
+make html
+```
+
+**Method 3: Manual build**
+```bash
+cd docs
+sphinx-build -b html . _build/html
+```
+
+### Verification Steps
+
+After rebuilding documentation:
+
+1. **Check for errors**: Build should complete without warnings
+   ```bash
+   # Look for "build succeeded" message
+   # Review any warnings about missing docstrings
+   ```
+
+2. **Verify output**: Open `docs/_build/html/index.html` in browser
+   ```bash
+   # Windows
+   start docs/_build/html/index.html
+   
+   # Mac
+   open docs/_build/html/index.html
+   
+   # Linux
+   xdg-open docs/_build/html/index.html
+   ```
+
+3. **Check API pages**: Navigate to API Reference section
+   - Verify all public modules are listed
+   - Check that classes and methods appear
+   - Ensure docstrings render correctly
+
+4. **Validate coverage**: Ensure all public modules/classes are documented
+   - No missing modules in API reference
+   - All public classes have documentation
+   - All public methods have docstrings
+
+### Documentation Standards
+
+#### Public API Only
+- **Private methods** (prefixed with `_`) should NOT appear in API docs
+- Configure in `docs/conf.py`: `"private-members": False`
+- Private methods should still have docstrings and type hints for developers
+
+#### Google-style Docstrings
+All public methods must have complete Google-style docstrings:
+
+```python
+def compress_model(
+    model_data: BlendshapeModelData,
+    iterations: int = 10000,
+    device: str = "cuda",
+) -> Path:
+    """Compress blendshape model to joint-based skinning representation.
+    
+    This method decomposes blendshape deformations into a sparse set of
+    joint transformations using optimization as described in Equation 3-7
+    of the paper.
+    
+    Args:
+        model_data: Blendshape model containing rest pose and deltas.
+            Must have at least 1 blendshape and valid topology.
+        iterations: Number of optimization iterations. Higher values
+            produce better quality but take longer. Default: 10000
+        device: PyTorch device ('cuda' or 'cpu'). GPU provides 60× speedup.
+            Default: 'cuda'
+    
+    Returns:
+        Path to generated NPZ file containing compressed representation
+        with keys: 'weights', 'transforms', 'rest_verts', 'faces'
+    
+    Raises:
+        ValueError: If model_data is invalid, empty, or has inconsistent
+            topology across blendshapes.
+        RuntimeError: If optimization fails to converge after max iterations.
+        torch.cuda.OutOfMemoryError: If GPU memory insufficient for model size.
+    
+    Examples:
+        Basic usage with default settings:
+        
+        >>> data = BlendshapeModelData.from_npz("model.npz")
+        >>> output = compress_model(data)
+        >>> print(f"Compressed model saved to {output}")
+        
+        CPU fallback for systems without GPU:
+        
+        >>> output = compress_model(data, device='cpu')
+        
+        Higher quality with more iterations:
+        
+        >>> output = compress_model(data, iterations=20000)
+    
+    Note:
+        - Higher iteration counts produce better quality but take longer
+        - GPU acceleration provides 60× speedup over CPU
+        - Large models (100+ shapes) may require 16GB+ GPU memory
+        - Compression is lossy; typical MAE < 0.05 mm
+    
+    References:
+        Paper Section 3, Equations 3-7 for optimization formulation
+    """
+    # Implementation...
+```
+
+#### Type Hints Required
+All public methods must have proper type hints:
+
+```python
+# Good: Complete type hints
+def load_model(
+    path: Path,
+    normalize: bool = True,
+) -> BlendshapeModelData:
+    """Load blendshape model from file."""
+    pass
+
+# Bad: Missing type hints
+def load_model(path, normalize=True):
+    """Load blendshape model from file."""
+    pass
+```
+
+### Automatic Deployment
+
+Documentation is automatically built and deployed to GitHub Pages when:
+- Changes are pushed to `main` branch
+- GitHub Actions workflow `.github/workflows/docs.yml` runs successfully
+- Deployed URL: `https://[username].github.io/meta-compskin/`
+
+**Note**: GitHub Pages must be enabled in repository settings:
+1. Go to repository Settings → Pages
+2. Set Source to "Deploy from a branch"
+3. Select branch: `gh-pages`
+4. Click Save
+
+### Docstring Components
+
+All public API elements must include:
+
+1. **Summary**: One-line description of what it does
+2. **Extended description**: Additional context, algorithm details (optional)
+3. **Args**: All parameters with types and descriptions
+4. **Returns**: Return value type and description
+5. **Raises**: Exceptions that may be raised (if applicable)
+6. **Examples**: Usage examples for complex methods
+7. **Note/Warning**: Important information (when applicable)
+8. **References**: Links to paper sections/equations (for math implementations)
+
+### Checklist for API Changes
+
+When modifying public API, ensure:
+
+- [ ] Updated docstrings with Google-style format
+- [ ] Added/updated type hints for all parameters and returns
+- [ ] Rebuilt Sphinx documentation locally (`python scripts/build_docs.py`)
+- [ ] Verified documentation builds without errors or warnings
+- [ ] Checked generated HTML looks correct in browser
+- [ ] Reviewed API reference page for new/changed methods
+- [ ] Added examples to docstrings for complex functionality
+- [ ] Committed both code changes and any documentation updates
+- [ ] GitHub Actions will deploy docs automatically on merge to main
+
+### Common Documentation Issues
+
+**Issue**: Module not appearing in API docs
+**Solution**: Check that module is imported in `__init__.py` and listed in `docs/api/index.rst`
+
+**Issue**: Private methods appearing in docs
+**Solution**: Verify `"private-members": False` in `docs/conf.py` autodoc settings
+
+**Issue**: Type hints not rendering correctly
+**Solution**: Ensure sphinx.ext.autodoc is enabled and napoleon is configured
+
+**Issue**: Math equations not rendering
+**Solution**: Use LaTeX syntax with sphinx.ext.mathjax: `` :math:`M_j = I + \sum c_k N_{k,j}` ``
+
+**Issue**: Code examples not formatted
+**Solution**: Use proper indentation in docstring examples or code-block directive
+
+### Documentation Structure
+
+```
+docs/
+├── conf.py                 # Sphinx configuration
+├── index.rst              # Main documentation page
+├── installation.rst       # Installation guide
+├── quickstart.rst         # Quick start guide
+├── api/
+│   ├── index.rst          # API overview
+│   ├── model_data.rst     # BlendshapeModelData docs
+│   ├── model_fit.rst      # SkinCompressor docs
+│   ├── animation_generator.rst  # Animation docs
+│   └── maya_loader.rst    # Maya integration docs
+├── guides/
+│   └── index.rst          # User guides
+├── _build/                # Generated HTML (gitignored)
+└── _static/               # Static assets
+```

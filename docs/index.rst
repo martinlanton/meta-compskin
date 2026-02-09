@@ -11,7 +11,7 @@ skinning representation using sparse transformations.
 
    installation
    quickstart
-   api/modules
+   api/index
    guides/index
 
 Overview

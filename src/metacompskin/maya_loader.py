@@ -174,6 +174,7 @@ def _generate_maya_loading_script(obj_path: Path) -> str:
 
     Note:
         Uses raw strings and absolute paths for Windows compatibility.
+        Preserves original mesh topology (triangles or quads as-is).
     """
     return f"""
 import sys
@@ -203,7 +204,7 @@ try:
         pos = cmds.xform(f"{{mesh_shape}}.vtx[{{i}}]", q=True, ws=True, t=True)
         vertices.append(pos)
 
-    # Get faces
+    # Get faces (preserves original topology - triangles or quads)
     face_count = cmds.polyEvaluate(mesh_shape, face=True)
     faces = []
     for i in range(face_count):
@@ -284,9 +285,12 @@ def _parse_geometry_data(stdout: str) -> Tuple[npt.NDArray, npt.NDArray]:
 
     Returns:
         Tuple of (vertices, faces) as numpy arrays.
+        Faces will have shape (n_faces, verts_per_face) where verts_per_face
+        is consistent across all faces (either 3 for triangles or 4 for quads).
 
     Raises:
-        RuntimeError: If JSON parsing fails or data is invalid.
+        RuntimeError: If JSON parsing fails, data is invalid, or faces have
+            inconsistent vertex counts.
     """
     # Parse JSON output (last line should be JSON)
     output_lines = stdout.strip().split("\n")
@@ -301,7 +305,54 @@ def _parse_geometry_data(stdout: str) -> Tuple[npt.NDArray, npt.NDArray]:
         raise RuntimeError(f"Maya loading error: {data['error']}")
 
     vertices = np.array(data["vertices"], dtype=np.float64)
-    faces = np.array(data["faces"], dtype=np.int32)
+
+    # Handle faces with validation for consistent topology
+    faces_list = data["faces"]
+
+    if not faces_list:
+        raise RuntimeError("No faces found in Maya output")
+
+    # Check topology consistency - all faces must have same vertex count
+    face_lengths = [len(face) for face in faces_list]
+    unique_lengths = set(face_lengths)
+
+    if len(unique_lengths) > 1:
+        # Mixed topology detected - this is an error
+        length_counts = {length: face_lengths.count(length) for length in unique_lengths}
+        raise RuntimeError(
+            f"Inconsistent face topology detected: {length_counts}\n"
+            f"All faces must have the same number of vertices.\n"
+            f"Found faces with {sorted(unique_lengths)} vertices per face.\n"
+            f"This may indicate corrupted geometry or an issue with Maya's export."
+        )
+
+    verts_per_face = face_lengths[0]
+
+    # Validate supported topology (triangles or quads)
+    if verts_per_face not in (3, 4):
+        raise RuntimeError(
+            f"Unsupported face topology: {verts_per_face} vertices per face.\n"
+            f"Only triangles (3) and quads (4) are supported.\n"
+            f"Please triangulate or quadrangulate the mesh before loading."
+        )
+
+    # Convert to numpy array - now guaranteed to be homogeneous
+    try:
+        faces = np.array(faces_list, dtype=np.int32)
+    except ValueError as e:
+        # This should not happen if validation passed, but catch it anyway
+        raise RuntimeError(
+            f"Failed to convert faces to numpy array: {e}\n"
+            f"Face sample: {faces_list[:3]}"
+        ) from e
+
+    # Final shape validation
+    expected_shape = (len(faces_list), verts_per_face)
+    if faces.shape != expected_shape:
+        raise RuntimeError(
+            f"Face array has unexpected shape {faces.shape}, "
+            f"expected {expected_shape}"
+        )
 
     return vertices, faces
 

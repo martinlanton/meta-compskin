@@ -17,12 +17,17 @@ extensions = [
     "sphinx.ext.viewcode",  # Source code links
     "sphinx.ext.mathjax",  # LaTeX math support (CRITICAL!)
     "sphinx.ext.intersphinx",  # Links to other docs
+    "sphinx.ext.autosummary",  # Auto-generate API docs
 ]
 
 # Napoleon settings for Google-style docstrings
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 napoleon_include_init_with_doc = True
+
+# Autosummary settings
+autosummary_generate = True
+autosummary_imported_members = False
 
 # MathJax configuration for LaTeX
 mathjax_path = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
@@ -40,6 +45,8 @@ autodoc_default_options = {
     "member-order": "bysource",
     "undoc-members": True,
     "show-inheritance": True,
+    "private-members": False,  # Don't document private/internal methods
+    "special-members": False,  # Don't document special methods like __init__
 }
 
 templates_path = ["_templates"]

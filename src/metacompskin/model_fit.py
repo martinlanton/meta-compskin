@@ -360,8 +360,9 @@ class SkinCompressor:
                where D is diagonal degree matrix, A is adjacency
 
         Args:
-            rest_faces: Mesh face indices, shape (n_faces, 4).
-                Quad mesh topology defining vertex connectivity.
+            rest_faces: Mesh face indices, shape (n_faces, verts_per_face).
+                Mesh topology defining vertex connectivity. Supports both
+                triangles (3) and quads (4).
 
         Returns:
             Sparse Laplacian matrix, shape (N, N) where N is number of vertices.
@@ -372,7 +373,7 @@ class SkinCompressor:
             The Laplacian is computed on the CPU even when training on GPU,
             then converted to sparse tensor on the target device. This is
             efficient because the Laplacian is sparse (~6-8 non-zeros per row
-            for typical quad meshes) and only computed once at initialization.
+            for typical meshes) and only computed once at initialization.
 
         References:
             - Section 4: Mentions Laplacian regularization

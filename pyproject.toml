@@ -172,6 +172,7 @@ addopts = [
     "--cov-report=xml",
 ]
 testpaths = ["tests"]
+pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -179,6 +180,8 @@ python_functions = ["test_*"]
 # Coverage configuration
 [tool.coverage.run]
 source = ["src"]
+data_file = ".coverage"
+parallel = false
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -195,4 +198,7 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "@abstractmethod",
 ]
+
+[tool.coverage.xml]
+output = "coverage.xml"
 

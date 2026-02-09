@@ -28,7 +28,7 @@ _SPATIAL_DIMS = 3  # X, Y, Z coordinates
 _DELTAS_NDIM = 3  # Deltas are 3D: (n_blendshapes, n_vertices, spatial_dims)
 _VERTS_NDIM = 2  # Vertices are 2D: (n_vertices, spatial_dims)
 _FACES_NDIM = 2  # Faces are 2D: (n_faces, vertices_per_face)
-_QUAD_VERTS = 4  # Number of vertices per quad face
+# Supported face types: triangles (3) or quads (4)
 
 
 @dataclass(frozen=True)
@@ -48,8 +48,9 @@ class BlendshapeModelData:
             Contains vertex displacements from rest pose for each blendshape.
         rest_verts: Rest pose vertex positions, shape (n_vertices, 3).
             The neutral facial expression (all blend weights = 0).
-        rest_faces: Mesh face indices, shape (n_faces, 4) for quad meshes.
-            Defines mesh topology/connectivity.
+        rest_faces: Mesh face indices, shape (n_faces, verts_per_face).
+            Defines mesh topology/connectivity. Supports both triangles (3)
+            and quads (4). All faces must have the same vertex count.
         inbetween_info: Dictionary containing inbetween shape definitions.
             Used by rig logic for interpolated shapes between extremes.
         combination_info: Dictionary containing corrective shape definitions.
@@ -70,7 +71,7 @@ class BlendshapeModelData:
         >>> print(f"Alpha: {model.alpha}")
         Alpha: 10.0
 
-        >>> # Or create from arrays directly
+        >>> # Or create from arrays directly with quads
         >>> deltas = np.random.randn(230, 7306, 3)
         >>> rest_verts = np.random.randn(7306, 3)
         >>> rest_faces = np.array([[0, 1, 2, 3], [4, 5, 6, 7]])  # Quads
@@ -244,14 +245,16 @@ class BlendshapeModelData:
         # Check rest_faces shape
         if len(rest_faces.shape) != _FACES_NDIM:
             raise ValueError(
-                f"rest_faces must be 2D array (n_faces, 4), "
+                f"rest_faces must be 2D array (n_faces, verts_per_face), "
                 f"got shape {rest_faces.shape}"
             )
 
-        if rest_faces.shape[1] != _QUAD_VERTS:
+        # Accept both triangles (3) and quads (4)
+        verts_per_face = rest_faces.shape[1]
+        if verts_per_face not in (3, 4):
             raise ValueError(
-                f"rest_faces second dimension must be 4 (quads), "
-                f"got {rest_faces.shape[1]}"
+                f"rest_faces second dimension must be 3 (triangles) or 4 (quads), "
+                f"got {verts_per_face}"
             )
 
         # Check that face indices are within valid range
@@ -453,17 +456,25 @@ class MayaBlendshapeModelData(BlendshapeModelData):
             # Validate topology consistency: same vertex count
             if shape_verts.shape[0] != rest_verts.shape[0]:
                 raise ValueError(
-                    f"Topology mismatch: {shape_path.name} has "
-                    f"{shape_verts.shape[0]} vertices, but rest mesh has "
-                    f"{rest_verts.shape[0]} vertices"
+                    f"Topology mismatch detected!\n"
+                    f"  File: {shape_path.name}\n"
+                    f"  Vertices: {shape_verts.shape[0]} (expected {rest_verts.shape[0]})\n"
+                    f"  Rest mesh: {rest_obj_path.name} has {rest_verts.shape[0]} vertices\n\n"
+                    f"All blendshape meshes must have identical topology (same vertex and face counts).\n"
+                    f"This error indicates the meshes were exported with different settings or represent\n"
+                    f"different geometry. Please ensure all OBJ files are exported from the same base mesh."
                 )
 
             # Validate topology consistency: same face count
             if shape_faces.shape[0] != rest_faces.shape[0]:
                 raise ValueError(
-                    f"Topology mismatch: {shape_path.name} has "
-                    f"{shape_faces.shape[0]} faces, but rest mesh has "
-                    f"{rest_faces.shape[0]} faces"
+                    f"Topology mismatch detected!\n"
+                    f"  File: {shape_path.name}\n"
+                    f"  Faces: {shape_faces.shape[0]} (expected {rest_faces.shape[0]})\n"
+                    f"  Rest mesh: {rest_obj_path.name} has {rest_faces.shape[0]} faces\n\n"
+                    f"All blendshape meshes must have identical topology (same vertex and face counts).\n"
+                    f"This error indicates the meshes were exported with different settings or represent\n"
+                    f"different geometry. Please ensure all OBJ files are exported from the same base mesh."
                 )
 
             shape_verts_list.append(shape_verts)
