@@ -141,6 +141,7 @@ frames/
 
 # Documentation builds
 docs/_build/
+docs/api/_autosummary/
 docs/_static/
 docs/_templates/
 
@@ -165,7 +166,10 @@ conda-meta/
 [Ll]ib
 [Ll]ib64
 [Ll]ocal
-[Ss]cripts
+# Note: [Ss]cripts pattern matches virtualenv Scripts folder, not project scripts/
+[Ss]cripts/python.exe
+[Ss]cripts/pip*.exe
+[Ss]cripts/activate*
 pyvenv.cfg
 .venv
 pip-selfcheck.json
