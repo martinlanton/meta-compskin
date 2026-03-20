@@ -55,7 +55,11 @@ class SkinCompressor:
     Attributes:
         model_data: BlendshapeModelData with geometry and rig info.
         iterations: Number of optimization iterations (default 10000).
-        number_of_bones: Number of proxy bones P (default 40).
+        rest_joint_matrices_3x4: Optional 3×4 affine matrices for joint rest poses.
+            Extracted from the 4×4 matrices provided during initialization.
+            If None, identity matrices are used (default behavior).
+        number_of_bones: Number of proxy bones P (default 40 when rest_joint_matrices
+            is not provided, otherwise set to the number of matrices provided).
             Paper uses P=40 for good quality/performance balance (Table 1).
         max_influences: Max non-zero weights per vertex K (default 8).
             Standard GPU skinning pipeline constraint (Section 2.2).
@@ -98,22 +102,58 @@ class SkinCompressor:
         self,
         model_data: BlendshapeModelData,
         iterations: int = 10000,
+        rest_joint_matrices: np.ndarray | list | None = None,
     ):
         """Initializes the SkinCompressor.
 
         Args:
             model_data: BlendshapeModelData instance containing model geometry and rig info.
             iterations: Number of optimization iterations.
+            rest_joint_matrices: Optional array of 4×4 transformation matrices for joint rest poses.
+                If provided, must be shape (P, 4, 4) where P is the number of bones.
+                Each matrix should be a standard 4×4 homogeneous transformation matrix.
+                When provided, overrides the default number_of_bones (40) to match the
+                number of matrices supplied. If None (default), uses identity matrices
+                at the origin, maintaining backward compatibility.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
             >>> model_data = BlendshapeModelData.from_npz("data/source_models/aura.npz")
+            >>> # Default behavior with identity matrices
             >>> compressor = SkinCompressor(model_data=model_data, iterations=10000)
+            >>> compressor.run()
+            >>>
+            >>> # With custom joint matrices
+            >>> import numpy as np
+            >>> joint_matrices = np.array([np.eye(4) for _ in range(28)])
+            >>> compressor = SkinCompressor(
+            ...     model_data=model_data,
+            ...     iterations=10000,
+            ...     rest_joint_matrices=joint_matrices
+            ... )
             >>> compressor.run()
         """
         self.model_data = model_data
         self.iterations = iterations
-        self.number_of_bones = 40
+
+        # Handle rest joint matrices and set number of bones accordingly
+        if rest_joint_matrices is not None:
+            # Convert to numpy array if needed
+            rest_joint_matrices = np.array(rest_joint_matrices)
+
+            # Validate shape
+            if rest_joint_matrices.ndim != 3 or rest_joint_matrices.shape[1:] != (4, 4):
+                raise ValueError(
+                    f"rest_joint_matrices must have shape (P, 4, 4), "
+                    f"got shape {rest_joint_matrices.shape}"
+                )
+
+            # Extract 3×4 affine portion (first 3 rows of each matrix)
+            self.rest_joint_matrices_3x4 = rest_joint_matrices[:, :3, :].astype(np.float32)
+            self.number_of_bones = len(rest_joint_matrices)
+        else:
+            self.rest_joint_matrices_3x4 = None
+            self.number_of_bones = 40
         self.max_influences = 8  # number of weights per vertex
         self.total_nnz_B_rt = 6000  # number of non-zero values into B_rt matrix
         self.init_weight = 1e-3
@@ -174,8 +214,10 @@ class SkinCompressor:
                 Copied from input model
             weights: Normalized skinning weights, shape (N, P)
                 Satisfies: non-negative, partition of unity, K-sparse
-            restXform: Identity transforms for rest pose, shape (P, 3, 4)
-                Not used at runtime but included for completeness
+            restXform: Rest pose transforms, shape (P, 3, 4)
+                If rest_joint_matrices was provided during initialization, contains
+                those matrices (as 3×4 affine). Otherwise, contains identity matrices.
+                Not used at runtime but included for completeness.
             shapeXform: Learned transformation matrices, shape (3S, 4P)
                 SPARSE matrix B, ~90% zeros, used at runtime (Equation 7)
 
@@ -274,12 +316,18 @@ class SkinCompressor:
 
         shapeXforms = B.detach().cpu().numpy()
 
+        # Use provided joint matrices or default to identity
+        if self.rest_joint_matrices_3x4 is not None:
+            rest_xform = self.rest_joint_matrices_3x4
+        else:
+            rest_xform = np.array([np.eye(3, 4)] * self.number_of_bones)
+
         np.savez(
             output_location,
             rest=npf(self.rest_pose[:, :3]),
             quads=self.model_data.rest_faces,
             weights=npf(Wn).transpose(),
-            restXform=np.array([np.eye(3, 4)] * self.number_of_bones),
+            restXform=rest_xform,
             shapeXform=shapeXforms,
         )
 
