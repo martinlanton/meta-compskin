@@ -36,6 +36,12 @@ jobs:
           cd docs
           make html
 
+      - name: Run tests with coverage
+        run: pytest --cov=metacompskin --cov-report=html
+
+      - name: Copy coverage into docs output
+        run: cp -r htmlcov/ docs/_build/html/coverage/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
