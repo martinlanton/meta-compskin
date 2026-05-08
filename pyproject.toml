@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "torch>=1.9.0",
     "numpy>=1.20.0",
+    "igl>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +42,6 @@ dev = [
     "myst-parser>=0.18.0",
 ]
 viz = [
-    "igl>=2.0.0",
     "matplotlib>=3.0.0",
 ]
 
