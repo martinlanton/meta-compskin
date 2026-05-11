@@ -14,7 +14,7 @@ class TestCompskin(unittest.TestCase):
         test_data_location = location / "test_data"
         cls.result_data_location = location / "test_result"
 
-        expected_file = test_data_location / "expected_aura.npz"
+        expected_file = test_data_location / "expected_aura_10000_iter.npz"
         cls.expected_data = np.load(str(expected_file))
         expected_file_short = test_data_location / "expected_aura_600_iter.npz"
         cls.expected_data_short = np.load(str(expected_file_short))

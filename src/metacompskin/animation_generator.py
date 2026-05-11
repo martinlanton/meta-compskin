@@ -161,6 +161,24 @@ class AnimationFrameGenerator:
 
         return weighted_transforms + identity_offset
 
+    def compute_frame_vertices(self, blendshape_weights: np.ndarray) -> np.ndarray:
+        """Compute animated vertex positions for a single frame.
+
+        Args:
+            blendshape_weights: Blendshape activation coefficients cₖ, shape (S,).
+
+        Returns:
+            Animated vertex positions, shape (N, 3).
+
+        References:
+            Equation 7: Mⱼ = I + Σₖ cₖ Nₖ,ⱼ
+        """
+        transforms = self._generate_skinning_transforms(blendshape_weights)
+        X = (
+            self.weights.T.reshape(self.num_bones, 1, -1) * self.rest_pose_homog.T
+        ).reshape(4 * self.num_bones, -1)
+        return (transforms @ X).T  # (N, 3)
+
     def generate_frames(
         self,
         animation_weights_path: str | Path,
