@@ -1,7 +1,9 @@
+import sys
 import unittest
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 import metacompskin.rig.riglogic as rl
@@ -10,6 +12,12 @@ from metacompskin.animation_generator import AnimationFrameGenerator
 from metacompskin.model_data import BlendshapeModelData
 
 _MAX_CONTROL_WEIGHTS = 72
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="macOS/CPU test suite: expected data generated on macOS (Apple Silicon, CPU-only)",
+)
+
 
 class TestVertexPositions(unittest.TestCase):
     """Regression tests for animated vertex positions produced by the compressed skinning pipeline.
@@ -31,7 +39,7 @@ class TestVertexPositions(unittest.TestCase):
         model_file = test_data_location / "source_models" / "aura.npz"
         cls.model_data = BlendshapeModelData.from_npz(str(model_file))
 
-        expected = np.load(str(test_data_location / "expected_aura_600_iter_vertices.npz"))
+        expected = np.load(str(test_data_location / "macos" / "expected_aura_600_iter_vertices.npz"))
         cls.expected_vertices = expected["vertices"]          # (30, N, 3)
         cls.frame_indices = expected["frame_indices"].tolist() # [int, ...]
 
@@ -73,7 +81,7 @@ class TestVertexPositions(unittest.TestCase):
     def test_vertex_positions_full_iter(self):
         location = Path(__file__).parent
         expected = np.load(
-            str(location / "test_data" / "expected_aura_10000_iter_vertices.npz")
+            str(location / "test_data" / "macos" / "expected_aura_10000_iter_vertices.npz")
         )
         expected_vertices = expected["vertices"]  # (30, N, 3)
 
