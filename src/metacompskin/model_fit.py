@@ -12,7 +12,6 @@ Handles loading model data, running optimization, and saving results.
 import time
 from pathlib import Path
 
-import igl
 import numpy as np
 import scipy as sp
 import torch
@@ -25,6 +24,37 @@ data_location = location / "data"
 
 # Optimization constants
 _SPARSITY_THRESHOLD = 1e-4  # Threshold for counting non-zero values in sparse matrices
+
+
+def _build_adjacency_matrix(
+    faces: np.ndarray, n_verts: int
+) -> sp.sparse.csr_matrix:
+    """Build a binary vertex adjacency matrix from polygon faces.
+
+    Connects every pair of vertices that share a face (all combinations within
+    each face), matching libigl's adjacency_matrix behaviour for quad meshes.
+
+    Args:
+        faces: Face index array, shape (n_faces, verts_per_face).
+        n_verts: Total number of vertices.
+
+    Returns:
+        Symmetric binary CSR adjacency matrix, shape (n_verts, n_verts).
+    """
+    from itertools import combinations
+
+    verts_per_face = faces.shape[1]
+    pair_cols = np.array(list(combinations(range(verts_per_face), 2)))
+    i_verts = faces[:, pair_cols[:, 0]].ravel()
+    j_verts = faces[:, pair_cols[:, 1]].ravel()
+    rows = np.concatenate([i_verts, j_verts])
+    cols = np.concatenate([j_verts, i_verts])
+    adj = sp.sparse.csr_matrix(
+        (np.ones(len(rows), dtype=np.float64), (rows, cols)),
+        shape=(n_verts, n_verts),
+    )
+    adj.data[:] = 1.0  # deduplicate: shared edges appear in two faces → clip to binary
+    return adj
 
 
 class SkinCompressor:
@@ -429,9 +459,9 @@ class SkinCompressor:
             - Botsch & Sorkine 2008: Differential coordinates (Laplacian theory)
         """
         # Adjacency matrix: represents the connectivity of the mesh
-        adj = igl.adjacency_matrix(rest_faces)
+        adj = _build_adjacency_matrix(rest_faces, rest_faces.max() + 1)
         # Diagonal adjacency matrix: calculates the degree of each vertex
-        adj_diag = np.array(np.sum(adj, axis=1)).squeeze()
+        adj_diag = np.array(np.sum(adj, axis=1)).squeeze().astype(float)
         # Rigidness Laplacian regularization.
         # ⎧-1        if k = i
         # ⎨1/|N(i)|, if k ∈ N(i)

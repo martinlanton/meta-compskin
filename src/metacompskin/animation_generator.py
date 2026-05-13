@@ -12,13 +12,27 @@ from the SkinCompressor class along with blendshape model data.
 
 from pathlib import Path
 
-import igl
 import numpy as np
 import torch
 
 import metacompskin.rig.riglogic as rl
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.utils import add_homogeneous_coordinate
+
+
+def _write_obj(path: str, vertices: np.ndarray, faces: np.ndarray) -> None:
+    """Write a polygon mesh to an OBJ file.
+
+    Args:
+        path: Output file path.
+        vertices: Vertex positions, shape (N, 3).
+        faces: Face index array (0-based), shape (F, verts_per_face).
+    """
+    with open(path, "w") as f:
+        for v in vertices:
+            f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+        for face in faces:
+            f.write("f " + " ".join(str(i + 1) for i in face) + "\n")
 
 
 class AnimationFrameGenerator:
@@ -273,7 +287,7 @@ class AnimationFrameGenerator:
 
             # Save as OBJ file
             output_path = output_dir / f"anim_frame{frame_idx:05d}.obj"
-            igl.write_obj(str(output_path), animated_verts.T, self.quads)
+            _write_obj(str(output_path), animated_verts.T, self.quads)
 
             if (frame_idx + 1) % 10 == 0 or frame_idx == 0:
                 print(f"Generated frame {frame_idx + 1}/{num_frames}")
