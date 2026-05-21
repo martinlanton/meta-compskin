@@ -325,7 +325,7 @@ class SkinCompressor:
 
         Wn = W / W.sum(axis=0)
         print(Wn.min().item(), Wn.max().item())
-        BX, _, _ = self.compBX(
+        BX, B, _ = self.compBX(
             Wn, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
         )
         orig_deltas = npf(
@@ -339,10 +339,6 @@ class SkinCompressor:
         meanDelta = np.abs(orig_deltas - our_deltas).mean()
         print(f"maxDelta {maxDelta}")
         print(f"meanDelta {meanDelta}")
-
-        _, B, _ = self.compBX(
-            Wn, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
-        )
 
         shapeXforms = B.detach().cpu().numpy()
 
