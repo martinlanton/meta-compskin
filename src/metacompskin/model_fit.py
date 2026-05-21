@@ -203,8 +203,12 @@ class SkinCompressor:
             f"Using alpha value: {self.alpha} for model '{self.model_data.model_name}'"
         )
 
-        self.loss_list = []
-        self.abserr_list = []
+        self.loss_list: list[float] = []
+        self.abserr_list: list[float] = []
+
+        self.L: torch.Tensor | None = None
+        self.rest_pose: torch.Tensor | None = None
+        self.optimizer: torch.optim.Adam | None = None
 
     def run(self, output_location: str | Path) -> None:
         """Runs complete skinning decomposition and saves compressed results.
