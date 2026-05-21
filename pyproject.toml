@@ -130,7 +130,7 @@ unfixable = []
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D"] # Ignore all docstring rules source_models tests
+"tests/**/*.py" = ["D", "PLR2004"] # D: no docstrings required; PLR2004: literal values in assertions are idiomatic
 "riglogic.py" = ["ALL"]
 "proteus_high.py" = ["ALL"]
 "model_data.py" = ["PLR0912"] # too many branches in a function
@@ -188,6 +188,7 @@ omit = [
     "*/__pycache__/*",
     "*/site-packages/*",
     "*/animation_generator.py",
+    "*/rig/riglogic.py",
 ]
 
 [tool.coverage.report]
