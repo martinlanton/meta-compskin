@@ -24,15 +24,14 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
 
 
 def load_obj_with_maya(
-    obj_path: Path, maya_interpreter_path: Optional[Path] = None
-) -> Tuple[npt.NDArray[np.floating], npt.NDArray[np.integer]]:
+    obj_path: Path, maya_interpreter_path: Path | None = None
+) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.integer]]:
     """Load OBJ file using Maya API.
 
     This function loads mesh geometry from an OBJ file using Maya's native
@@ -78,7 +77,7 @@ def load_obj_with_maya(
     return _load_obj_subprocess(obj_path, maya_interpreter_path)
 
 
-def _load_obj_direct(obj_path: Path) -> Tuple[npt.NDArray, npt.NDArray]:
+def _load_obj_direct(obj_path: Path) -> tuple[npt.NDArray, npt.NDArray]:
     """Load OBJ directly using maya.cmds (running inside Maya).
 
     This function is called when maya_interpreter_path is None,
@@ -277,7 +276,7 @@ def _execute_mayapy_script(maya_interpreter_path: Path, script_path: Path) -> st
     return result.stdout
 
 
-def _parse_geometry_data(stdout: str) -> Tuple[npt.NDArray, npt.NDArray]:
+def _parse_geometry_data(stdout: str) -> tuple[npt.NDArray, npt.NDArray]:
     """Parse geometry data from Maya script output.
 
     Args:
@@ -359,7 +358,7 @@ def _parse_geometry_data(stdout: str) -> Tuple[npt.NDArray, npt.NDArray]:
 
 def _load_obj_subprocess(
     obj_path: Path, maya_interpreter_path: Path
-) -> Tuple[npt.NDArray, npt.NDArray]:
+) -> tuple[npt.NDArray, npt.NDArray]:
     """Load OBJ via mayapy subprocess (refactored for clarity).
 
     This function spawns mayapy as a subprocess and uses it to load

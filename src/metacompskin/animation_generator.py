@@ -28,7 +28,7 @@ def _write_obj(path: str, vertices: np.ndarray, faces: np.ndarray) -> None:
         vertices: Vertex positions, shape (N, 3).
         faces: Face index array (0-based), shape (F, verts_per_face).
     """
-    with open(path, "w") as f:
+    with Path(path).open("w") as f:
         for v in vertices:
             f.write(f"v {v[0]} {v[1]} {v[2]}\n")
         for face in faces:

@@ -15,7 +15,7 @@ Example:
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -93,14 +93,14 @@ class BlendshapeModelData:
     deltas: npt.NDArray[np.floating]
     rest_verts: npt.NDArray[np.floating]
     rest_faces: npt.NDArray[np.integer]
-    inbetween_info: Dict[str, Any]
-    combination_info: Dict[str, Any]
+    inbetween_info: dict[str, Any]
+    combination_info: dict[str, Any]
     model_name: str
     alpha: float
 
     @classmethod
     def from_npz(
-        cls, npz_file_path: str, alpha: Optional[float] = None
+        cls, npz_file_path: str, alpha: float | None = None
     ) -> "BlendshapeModelData":
         """Create BlendshapeModelData instance from an NPZ file.
 
@@ -186,8 +186,8 @@ class BlendshapeModelData:
         deltas: npt.NDArray[np.floating],
         rest_verts: npt.NDArray[np.floating],
         rest_faces: npt.NDArray[np.integer],
-        inbetween_info: Dict[str, Any],
-        combination_info: Dict[str, Any],
+        inbetween_info: dict[str, Any],
+        combination_info: dict[str, Any],
     ):
         """Validate model data arrays before creating frozen instance.
 
@@ -378,9 +378,9 @@ class MayaBlendshapeModelData(BlendshapeModelData):
         cls,
         rest_obj_path: Path,
         blendshape_paths: list[Path],
-        model_name: Optional[str] = None,
-        alpha: Optional[float] = None,
-        maya_interpreter_path: Optional[Path] = None,
+        model_name: str | None = None,
+        alpha: float | None = None,
+        maya_interpreter_path: Path | None = None,
     ) -> "BlendshapeModelData":
         """Create BlendshapeModelData from Maya OBJ files using Maya API.
 

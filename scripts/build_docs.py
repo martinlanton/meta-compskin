@@ -35,11 +35,12 @@ def build_docs():
     clean_result = subprocess.run(
         [sys.executable, "-m", "sphinx.cmd.build", "-M", "clean", str(docs_dir), str(build_dir)],
         capture_output=True,
-        text=True
+        text=True,
+        check=False,
     )
 
     if clean_result.returncode != 0:
-        print(f"Warning: Clean command failed (this is OK if no previous build exists)")
+        print("Warning: Clean command failed (this is OK if no previous build exists)")
         print(clean_result.stderr)
     else:
         print("✓ Previous build cleaned")
@@ -49,7 +50,8 @@ def build_docs():
     build_result = subprocess.run(
         [sys.executable, "-m", "sphinx.cmd.build", "-b", "html", str(docs_dir), str(build_dir / "html")],
         capture_output=True,
-        text=True
+        text=True,
+        check=False,
     )
 
     # Show output
@@ -64,14 +66,13 @@ def build_docs():
         print(f"\nOutput: {output_file}")
         print(f"\nTo view: Open {output_file} in your browser")
         return 0
-    else:
-        print("\n" + "=" * 70)
-        print("✗ Documentation build failed!")
-        print("=" * 70)
-        if build_result.stderr:
-            print("\nErrors:")
-            print(build_result.stderr)
-        sys.exit(1)
+    print("\n" + "=" * 70)
+    print("✗ Documentation build failed!")
+    print("=" * 70)
+    if build_result.stderr:
+        print("\nErrors:")
+        print(build_result.stderr)
+    sys.exit(1)
 
 
 if __name__ == "__main__":

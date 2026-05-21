@@ -4,7 +4,6 @@ This module contains model-specific constants and parameters used throughout
 the compressed skinning pipeline.
 """
 
-from typing import Dict
 
 # Alpha values for Laplacian regularization
 # Lower values lead to sharper results, higher values lead to smoother results.
@@ -13,7 +12,7 @@ from typing import Dict
 # TODO: Can we procedurally determine the alpha value based on mesh density and sharpness?
 # We might be able to use the paper "Line Direction Matters: An Argument For The Use
 # Of Principal Directions In 3D Line Drawings"
-MODEL_ALPHA_VALUES: Dict[str, float] = {
+MODEL_ALPHA_VALUES: dict[str, float] = {
     "aura": 10.0,
     "jupiter": 10.0,
     "proteus": 50.0,

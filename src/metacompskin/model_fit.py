@@ -10,6 +10,7 @@ Handles loading model data, running optimization, and saving results.
 # the root directory of this source tree.
 
 import time
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,7 @@ data_location = location / "data"
 
 # Optimization constants
 _SPARSITY_THRESHOLD = 1e-4  # Threshold for counting non-zero values in sparse matrices
+_REST_JOINT_MATRICES_NDIM = 3  # Expected number of dimensions for rest_joint_matrices: (P, 4, 4)
 
 
 def _build_adjacency_matrix(
@@ -41,8 +43,6 @@ def _build_adjacency_matrix(
     Returns:
         Symmetric binary CSR adjacency matrix, shape (n_verts, n_verts).
     """
-    from itertools import combinations
-
     verts_per_face = faces.shape[1]
     pair_cols = np.array(list(combinations(range(verts_per_face), 2)))
     i_verts = faces[:, pair_cols[:, 0]].ravel()
@@ -172,7 +172,7 @@ class SkinCompressor:
             rest_joint_matrices = np.array(rest_joint_matrices)
 
             # Validate shape
-            if rest_joint_matrices.ndim != 3 or rest_joint_matrices.shape[1:] != (4, 4):
+            if rest_joint_matrices.ndim != _REST_JOINT_MATRICES_NDIM or rest_joint_matrices.shape[1:] != (4, 4):
                 raise ValueError(
                     f"rest_joint_matrices must have shape (P, 4, 4), "
                     f"got shape {rest_joint_matrices.shape}"
@@ -206,7 +206,7 @@ class SkinCompressor:
         self.loss_list = []
         self.abserr_list = []
 
-    def run(self, output_location):
+    def run(self, output_location: str | Path) -> None:
         """Runs complete skinning decomposition and saves compressed results.
 
         This is the main entry point that orchestrates the entire optimization
@@ -253,7 +253,7 @@ class SkinCompressor:
 
         Args:
             output_location: Path where compressed NPZ file will be saved.
-                Can be string or Path object. Parent directories created if needed.
+                Can be string or Path object. Parent directory must already exist.
 
         Side Effects:
             - Prints model information and training progress
@@ -410,7 +410,7 @@ class SkinCompressor:
         )
         return torch.from_numpy(deltas).float().to(self.device)
 
-    def get_laplacian_regularization(self, rest_faces):
+    def get_laplacian_regularization(self, rest_faces: np.ndarray) -> torch.Tensor:
         """Computes Laplacian regularization matrix for mesh smoothing.
 
         This method constructs the rigidity Laplacian used to enforce smooth
@@ -477,8 +477,8 @@ class SkinCompressor:
         TR: torch.Tensor,
         A: torch.Tensor,
         W: torch.Tensor,
-        normalizeW=False,
-    ):
+        normalizeW: bool = False,
+    ) -> None:
         """Trains skinning parameters using proximal Adam optimization (Section 4).
 
         This method implements the core optimization loop that learns sparse
@@ -607,7 +607,14 @@ class SkinCompressor:
 
                 st = time.time()
 
-    def compBX(self, Wn, B_rt, TR, n_bs, P):
+    def compBX(
+        self,
+        Wn: torch.Tensor,
+        B_rt: torch.Tensor,
+        TR: torch.Tensor,
+        n_bs: int,
+        P: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Computes the skinning decomposition B·C ≈ A (Equations 3-5).
 
         This function implements the core matrix factorization that approximates
@@ -713,7 +720,7 @@ class SkinCompressor:
         #              └               ┘
         return B @ X, B, X
 
-    def buildTR(self):
+    def buildTR(self) -> torch.Tensor:
         """Builds the 6-DOF transformation basis matrices (Equation 8).
 
         This method constructs the fixed basis matrices used to represent affine
