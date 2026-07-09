@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Install
 pip install -e ".[dev]"        # development install
-pip install -e ".[viz]"        # add visualization support (igl, matplotlib)
+pip install -e ".[viz]"        # add visualization support (matplotlib)
 
 # Test
 pytest                         # all tests

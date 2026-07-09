@@ -8,10 +8,75 @@
 
 ## Installation
 
-Please install Python, PyTorch (https://pytorch.org/get-started/locally/) and libigl (https://github.com/libigl/libigl-python-bindings).
+Requires **Python 3.10+**. The core dependencies (PyTorch, NumPy, SciPy) are
+installed automatically.
+
+### Standard installation
 
 ```bash
-pip install torch numpy scipy igl
+git clone https://github.com/martinlanton/meta-compskin.git
+cd meta-compskin
+pip install .
+```
+
+By default this installs the CPU build of PyTorch. The optimization is ~60×
+faster on GPU — for CUDA support, install a CUDA build of PyTorch **first**
+(pick your platform/CUDA version at https://pytorch.org/get-started/locally/),
+then install this package:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu128  # example
+pip install .
+```
+
+Verify the installation:
+
+```bash
+python -c "import metacompskin; print(metacompskin.__version__)"
+```
+
+### Development installation
+
+For working on the code itself (editable install with test/lint/docs tooling):
+
+```bash
+pip install -e ".[dev]"
+pre-commit install   # optional: run ruff/mypy automatically on commit
+pytest               # run the test suite
+```
+
+Optional extras:
+
+- `.[dev]` — pytest, pytest-cov, ruff, mypy, pre-commit, Sphinx (docs)
+- `.[viz]` — matplotlib, for visualization helpers
+
+### Inside Autodesk Maya (for the exporter)
+
+Only needed if you want to use `MayaBlendshapeExporter` to export model data
+from Maya scenes. Maya's Python only needs **numpy** (bundled with recent Maya
+versions) — install the package **without dependencies** so PyTorch is not
+pulled into Maya:
+
+```bash
+mayapy -m pip install --no-deps <path-to-meta-compskin>
+```
+
+(`mayapy` lives in Maya's `bin` directory, e.g.
+`C:\Program Files\Autodesk\Maya2025\bin\mayapy.exe` on Windows or
+`/Applications/Autodesk/maya2025/Maya.app/Contents/bin/mayapy` on macOS.)
+
+Alternatively, skip installation entirely and add the source directory to the
+path at the top of your Maya script:
+
+```python
+import sys
+sys.path.insert(0, r"D:/path/to/meta-compskin/src")
+```
+
+Verify from a shell:
+
+```bash
+mayapy -c "from metacompskin.maya_exporter import MayaBlendshapeExporter; print('OK')"
 ```
 
 ## <a name="GettingStarted"></a>Getting Started
