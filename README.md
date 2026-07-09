@@ -52,6 +52,51 @@ generator.generate_frames(
 )
 ```
 
+### Exporting Model Data from Autodesk Maya
+
+`MayaBlendshapeExporter` runs inside Maya (or mayapy) and writes an NPZ file
+that `BlendshapeModelData.from_npz` can load anywhere — so you export in Maya,
+then compress outside Maya where PyTorch/CUDA is available. It only needs
+numpy inside Maya; importing `metacompskin` in Maya does **not** require
+PyTorch.
+
+Inside Maya:
+
+```python
+from metacompskin.maya_exporter import MayaBlendshapeExporter
+
+# Simplest: auto-discovers the blendShape node on the mesh and captures
+# every target (weights and envelope are restored afterwards).
+MayaBlendshapeExporter("head_GEO").export("exports/head.npz")
+
+# Or diff separate target meshes against the rest mesh (points are read in
+# object space, so targets translated aside for layout are handled):
+MayaBlendshapeExporter(
+    "head_GEO",
+    target_meshes=["smile_GEO", "frown_GEO"],
+).export("exports/head.npz")
+
+# Optionally export skeleton joint rest matrices for
+# SkinCompressor(rest_joint_matrices=...):
+MayaBlendshapeExporter(
+    "head_GEO",
+    joints=["jaw_JNT", "cheek_L_JNT", "cheek_R_JNT"],  # >= 9 for compression
+).export("exports/head.npz")
+```
+
+Then outside Maya:
+
+```python
+from metacompskin.model_data import BlendshapeModelData
+from metacompskin.model_fit import SkinCompressor
+
+model_data = BlendshapeModelData.from_npz("exports/head.npz")
+SkinCompressor(model_data=model_data).run("exports/head_compressed.npz")
+```
+
+See `examples/example_maya_export.py` for the full workflow, including
+compressing with the exported joint matrices.
+
 ### Complete Workflow
 
 See `examples/example_usage.py` for a complete workflow example.
@@ -62,6 +107,8 @@ See `examples/example_usage.py` for a complete workflow example.
   - `model_data.py` - BlendshapeModelData class for loading and validating model data
   - `model_fit.py` - SkinCompressor class for optimization and compression
   - `animation_generator.py` - AnimationFrameGenerator for generating animation frames
+  - `maya_exporter.py` - MayaBlendshapeExporter for exporting model data from inside Maya
+  - `maya_loader.py` - Loading blendshape geometry from OBJ files via mayapy
   - `constants.py` - Model-specific constants and configurations
   - `rig/riglogic.py` - Rig logic for computing blendshape weights
 

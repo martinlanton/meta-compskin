@@ -6,8 +6,9 @@ rigs instead of generating joints at the center of the world.
 """
 
 import json
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import SkinCompressor
@@ -22,7 +23,7 @@ def example_with_custom_joints():
     # Option 1: Load joint matrices from a JSON file
     # The matrices should be 4×4 homogeneous transformation matrices
     # stored as a flat list of 16 values per matrix
-    with open("path/to/joint_matrices.json", encoding="utf-8") as f:
+    with Path("path/to/joint_matrices.json").open(encoding="utf-8") as f:
         matrices_flat = json.load(f)
 
     # Reshape from flat list to (N, 4, 4) array
@@ -32,9 +33,7 @@ def example_with_custom_joints():
     # The number of bones will be automatically set to match
     # the number of matrices provided
     compressor = SkinCompressor(
-        model_data=model_data,
-        iterations=10000,
-        rest_joint_matrices=joint_matrices
+        model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
     )
 
     print(f"Number of bones: {compressor.number_of_bones}")
@@ -71,9 +70,7 @@ def example_with_generated_joints():
 
     # Create compressor with generated joints
     compressor = SkinCompressor(
-        model_data=model_data,
-        iterations=10000,
-        rest_joint_matrices=joint_matrices
+        model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
     )
 
     compressor.run(output_location="output/generated_joints_compressed.npz")
@@ -89,7 +86,7 @@ def example_default_behavior():
     # - Identity matrices at the origin
     compressor = SkinCompressor(
         model_data=model_data,
-        iterations=10000
+        iterations=10000,
         # rest_joint_matrices=None  # This is the default
     )
 
@@ -106,4 +103,3 @@ if __name__ == "__main__":
     print("2. With programmatically generated joint matrices")
     print("3. With default behavior (no custom matrices)")
     print("\nUpdate the file paths in the code to run the examples.")
-

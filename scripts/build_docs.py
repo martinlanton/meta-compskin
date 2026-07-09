@@ -33,7 +33,15 @@ def build_docs():
     # Clean previous build
     print("\nCleaning previous build...")
     clean_result = subprocess.run(
-        [sys.executable, "-m", "sphinx.cmd.build", "-M", "clean", str(docs_dir), str(build_dir)],
+        [
+            sys.executable,
+            "-m",
+            "sphinx.cmd.build",
+            "-M",
+            "clean",
+            str(docs_dir),
+            str(build_dir),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -48,7 +56,15 @@ def build_docs():
     # Build HTML docs
     print("\nBuilding HTML documentation...")
     build_result = subprocess.run(
-        [sys.executable, "-m", "sphinx.cmd.build", "-b", "html", str(docs_dir), str(build_dir / "html")],
+        [
+            sys.executable,
+            "-m",
+            "sphinx.cmd.build",
+            "-b",
+            "html",
+            str(docs_dir),
+            str(build_dir / "html"),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -77,4 +93,3 @@ def build_docs():
 
 if __name__ == "__main__":
     sys.exit(build_docs())
-

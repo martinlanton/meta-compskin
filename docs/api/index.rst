@@ -10,6 +10,7 @@ Complete API documentation for the metacompskin package.
    metacompskin.model_data
    metacompskin.model_fit
    metacompskin.animation_generator
+   metacompskin.maya_exporter
    metacompskin.maya_loader
 
 Core Modules
@@ -21,5 +22,6 @@ Core Modules
    model_data
    model_fit
    animation_generator
+   maya_exporter
    maya_loader
 

@@ -39,13 +39,17 @@ class TestVertexPositions(unittest.TestCase):
         model_file = test_data_location / "source_models" / "aura.npz"
         cls.model_data = BlendshapeModelData.from_npz(str(model_file))
 
-        expected = np.load(str(test_data_location / "macos" / "expected_aura_600_iter_vertices.npz"))
-        cls.expected_vertices = expected["vertices"]          # (30, N, 3)
-        cls.frame_indices = expected["frame_indices"].tolist() # [int, ...]
+        expected = np.load(
+            str(test_data_location / "macos" / "expected_aura_600_iter_vertices.npz")
+        )
+        cls.expected_vertices = expected["vertices"]  # (30, N, 3)
+        cls.frame_indices = expected["frame_indices"].tolist()  # [int, ...]
 
         # Pre-compute blendshape weights for all test frames once.
         anim_data = np.load(test_data_location / "source_models" / "test_anim.npz")
-        all_control_weights = anim_data["weights"][:, :_MAX_CONTROL_WEIGHTS].astype(np.float32)
+        all_control_weights = anim_data["weights"][:, :_MAX_CONTROL_WEIGHTS].astype(
+            np.float32
+        )
         selected_control_weights = all_control_weights[cls.frame_indices]
         cls.blendshape_weights = rl.compute_rig_logic(
             torch.from_numpy(selected_control_weights).float(),
@@ -54,7 +58,9 @@ class TestVertexPositions(unittest.TestCase):
         ).numpy()
 
     def setUp(self) -> None:
-        self.result_file = Path(__file__).parent / "test_result" / "test_result_vertices.npz"
+        self.result_file = (
+            Path(__file__).parent / "test_result" / "test_result_vertices.npz"
+        )
 
     def tearDown(self) -> None:
         if self.result_file.exists():
@@ -74,14 +80,17 @@ class TestVertexPositions(unittest.TestCase):
         for i, anim_frame in enumerate(self.frame_indices):
             vertices = generator.compute_frame_vertices(self.blendshape_weights[i])
             with self.subTest(frame=anim_frame):
-                np.testing.assert_array_equal(
-                    self.expected_vertices[i], vertices
-                )
+                np.testing.assert_array_equal(self.expected_vertices[i], vertices)
 
     def test_vertex_positions_full_iter(self):
         location = Path(__file__).parent
         expected = np.load(
-            str(location / "test_data" / "macos" / "expected_aura_10000_iter_vertices.npz")
+            str(
+                location
+                / "test_data"
+                / "macos"
+                / "expected_aura_10000_iter_vertices.npz"
+            )
         )
         expected_vertices = expected["vertices"]  # (30, N, 3)
 
