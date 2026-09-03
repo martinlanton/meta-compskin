@@ -4,7 +4,6 @@ This module contains model-specific constants and parameters used throughout
 the compressed skinning pipeline.
 """
 
-
 # Alpha values for Laplacian regularization
 # Lower values lead to sharper results, higher values lead to smoother results.
 # Alpha values should be lower for high density meshes and higher for low density meshes.

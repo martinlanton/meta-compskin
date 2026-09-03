@@ -1,8 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 
-# This source code is licensed under the license found source_models the
-# LICENSE file source_models the root directory of this source tree.
+# This source code is licensed under the license found in the
+# LICENSE file in the root directory of this source tree.
 
 import torch
 
@@ -948,7 +948,7 @@ def compute_rig_logic(control_tensor, inbetween_dict, corrective_dict):
             x3=inbetween_values_list[2],
         )
 
-    tmp_tensor = rig_logic_tensor  # must copy to tmp source_models order to avoid a CUDA memory error when accessing and assigning to the same tensor
+    tmp_tensor = rig_logic_tensor  # must copy to tmp in order to avoid a CUDA memory error when accessing and assigning to the same tensor
 
     # solve correctives last
     for num_mults in corrective_dict.keys():

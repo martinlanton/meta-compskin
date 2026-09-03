@@ -25,12 +25,13 @@ data_location = location / "data"
 
 # Optimization constants
 _SPARSITY_THRESHOLD = 1e-4  # Threshold for counting non-zero values in sparse matrices
-_REST_JOINT_MATRICES_NDIM = 3  # Expected number of dimensions for rest_joint_matrices: (P, 4, 4)
+
+_REST_JOINT_MATRICES_NDIM = (
+    3  # Expected number of dimensions for rest_joint_matrices: (P, 4, 4)
+)
 
 
-def _build_adjacency_matrix(
-    faces: np.ndarray, n_verts: int
-) -> sp.sparse.csr_matrix:
+def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
     """Build a binary vertex adjacency matrix from polygon faces.
 
     Connects every pair of vertices that share a face (all combinations within
@@ -157,9 +158,7 @@ class SkinCompressor:
             >>> import numpy as np
             >>> joint_matrices = np.array([np.eye(4) for _ in range(28)])
             >>> compressor = SkinCompressor(
-            ...     model_data=model_data,
-            ...     iterations=10000,
-            ...     rest_joint_matrices=joint_matrices
+            ...     model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
             ... )
             >>> compressor.run()
         """
@@ -167,19 +166,25 @@ class SkinCompressor:
         self.iterations = iterations
 
         # Handle rest joint matrices and set number of bones accordingly
+        self.rest_joint_matrices_3x4: np.ndarray | None
         if rest_joint_matrices is not None:
             # Convert to numpy array if needed
             rest_joint_matrices = np.array(rest_joint_matrices)
 
             # Validate shape
-            if rest_joint_matrices.ndim != _REST_JOINT_MATRICES_NDIM or rest_joint_matrices.shape[1:] != (4, 4):
+            if (
+                rest_joint_matrices.ndim != _REST_JOINT_MATRICES_NDIM
+                or rest_joint_matrices.shape[1:] != (4, 4)
+            ):
                 raise ValueError(
                     f"rest_joint_matrices must have shape (P, 4, 4), "
                     f"got shape {rest_joint_matrices.shape}"
                 )
 
             # Extract 3×4 affine portion (first 3 rows of each matrix)
-            self.rest_joint_matrices_3x4 = rest_joint_matrices[:, :3, :].astype(np.float32)
+            self.rest_joint_matrices_3x4 = rest_joint_matrices[:, :3, :].astype(
+                np.float32
+            )
             self.number_of_bones = len(rest_joint_matrices)
         else:
             self.rest_joint_matrices_3x4 = None
@@ -327,7 +332,7 @@ class SkinCompressor:
         self.train(B_rt=B_rt, TR=TR, A=A, W=W, normalizeW=False)
         self.train(B_rt=B_rt, TR=TR, A=A, W=W, normalizeW=True)
 
-        Wn = W / W.sum(axis=0)
+        Wn = W / W.sum(dim=0)
         print(Wn.min().item(), Wn.max().item())
         BX, B, _ = self.compBX(
             Wn, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
@@ -461,7 +466,7 @@ class SkinCompressor:
         # Adjacency matrix: represents the connectivity of the mesh
         adj = _build_adjacency_matrix(rest_faces, rest_faces.max() + 1)
         # Diagonal adjacency matrix: calculates the degree of each vertex
-        adj_diag = np.array(np.sum(adj, axis=1)).squeeze().astype(float)
+        adj_diag = np.asarray(adj.sum(axis=1)).squeeze().astype(float)
         # Rigidness Laplacian regularization.
         # ⎧-1        if k = i
         # ⎨1/|N(i)|, if k ∈ N(i)
@@ -559,7 +564,7 @@ class SkinCompressor:
 
         st = time.time()
         for i in range(self.iterations):
-            W_n = W / W.sum(axis=0) if normalizeW else W
+            W_n = W / W.sum(dim=0) if normalizeW else W
 
             B_X, _, _ = self.compBX(
                 W_n, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
@@ -700,6 +705,10 @@ class SkinCompressor:
         #         ┆           ┆
         # boneP  w│           │
         #         └           ┘
+        if self.rest_pose is None:
+            raise RuntimeError(
+                "rest_pose is not initialized; compBX must be called via run()."
+            )
         X = (Wn.unsqueeze(2) * self.rest_pose).permute(0, 2, 1).reshape(4 * P, -1)
         B = B_rt[0, ...] * TR[0]
         for i in range(1, 6):

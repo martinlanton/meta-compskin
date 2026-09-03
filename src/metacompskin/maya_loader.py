@@ -121,26 +121,25 @@ def _load_obj_direct(obj_path: Path) -> tuple[npt.NDArray, npt.NDArray]:
 
     # Get vertex positions
     vertex_count = cmds.polyEvaluate(mesh_shape, vertex=True)
-    vertices = []
+    vertex_list = []
     for i in range(vertex_count):
         pos = cmds.xform(f"{mesh_shape}.vtx[{i}]", q=True, ws=True, t=True)
-        vertices.append(pos)
-
-    vertices = np.array(vertices, dtype=np.float64)
+        vertex_list.append(pos)
 
     # Get face connectivity
     face_count = cmds.polyEvaluate(mesh_shape, face=True)
-    faces = []
+    face_list = []
     for i in range(face_count):
         # Get vertex indices for this face
         face_verts = cmds.polyInfo(f"{mesh_shape}.f[{i}]", faceToVertex=True)[0]
         # Parse the string output (format: "FACE 0: 1 2 3 4\n")
         indices = [int(x) for x in face_verts.split(":")[1].split()]
-        faces.append(indices)
+        face_list.append(indices)
 
-    faces = np.array(faces, dtype=np.int32)
-
-    return vertices, faces
+    return (
+        np.array(vertex_list, dtype=np.float64),
+        np.array(face_list, dtype=np.int32),
+    )
 
 
 def _validate_maya_interpreter(maya_interpreter_path: Path) -> None:
@@ -317,7 +316,9 @@ def _parse_geometry_data(stdout: str) -> tuple[npt.NDArray, npt.NDArray]:
 
     if len(unique_lengths) > 1:
         # Mixed topology detected - this is an error
-        length_counts = {length: face_lengths.count(length) for length in unique_lengths}
+        length_counts = {
+            length: face_lengths.count(length) for length in unique_lengths
+        }
         raise RuntimeError(
             f"Inconsistent face topology detected: {length_counts}\n"
             f"All faces must have the same number of vertices.\n"
@@ -349,8 +350,7 @@ def _parse_geometry_data(stdout: str) -> tuple[npt.NDArray, npt.NDArray]:
     expected_shape = (len(faces_list), verts_per_face)
     if faces.shape != expected_shape:
         raise RuntimeError(
-            f"Face array has unexpected shape {faces.shape}, "
-            f"expected {expected_shape}"
+            f"Face array has unexpected shape {faces.shape}, expected {expected_shape}"
         )
 
     return vertices, faces

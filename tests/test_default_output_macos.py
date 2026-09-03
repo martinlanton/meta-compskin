@@ -62,9 +62,7 @@ class TestCompskinMacOS(unittest.TestCase):
 
         for key in result_data.files:
             with self.subTest(key=key):
-                np.testing.assert_array_equal(
-                    self.expected_data[key], result_data[key]
-                )
+                np.testing.assert_array_equal(self.expected_data[key], result_data[key])
 
 
 if __name__ == "__main__":
