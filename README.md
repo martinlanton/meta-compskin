@@ -56,6 +56,14 @@ generator.generate_frames(
 
 See `examples/example_usage.py` for a complete workflow example.
 
+### Using the Output in a Rig
+
+Riggers who need to bring the compressed weights and joint motion into Maya (or any
+other skinning pipeline) should read
+[Using Compressed Skinning Output in Maya](docs/guides/using_compressed_skinning_in_maya.md).
+It explains the data, the mixing rule that turns blendshape values into joint
+transforms, and what to validate, without assuming a particular tool or rig setup.
+
 ## Project Structure
 
 - `src/metacompskin/`

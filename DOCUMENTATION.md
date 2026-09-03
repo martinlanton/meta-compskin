@@ -26,6 +26,7 @@
   - [Loading OBJ Files](#loading-obj-files)
   - [Generating Compressed Data for Maya Rigs](#generating-compressed-data-for-maya-rigs)
   - [Building a Rig in Maya](#building-a-rig-in-maya)
+  - [Rigger's Guide to the Output](docs/guides/using_compressed_skinning_in_maya.md)
 - [Output Format](#output-format)
 - [Project Structure](#project-structure)
 - [Implementation Details](#implementation-details)
@@ -304,6 +305,11 @@ for full details. The script:
 4. Saves the compressed `.npz` output
 
 ### Building a Rig in Maya
+
+For the concepts behind using the compressed output in a rig (what the arrays mean,
+how shape values become joint transforms, rest-pose offsets, and what to validate),
+see the rigger-oriented guide
+[Using Compressed Skinning Output in Maya](docs/guides/using_compressed_skinning_in_maya.md).
 
 Use the provided Maya script to build a visual rig from compressed data:
 
