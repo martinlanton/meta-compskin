@@ -72,10 +72,11 @@ For that to keep working after conversion, joint motions must also be added
 together, not chained one rotation after another. Adding rotations is only
 well-behaved for small ones, so the method uses "linearised" rotations. The
 practical consequence is that a joint's transform is not a pure rotation plus
-translation; it carries a small amount of scale and shear. Maya joints handle
-this natively. Engines have to accept full affine matrices in their skinning
-shader, which most do, and this is the one hard requirement the method places
-on the target platform.
+translation; it carries a small amount of scale and shear. In Maya a plain
+transform holds that; a joint on its own does not (see the
+[Maya rig workflow](../user_guide/maya_rig_workflow.md), section 3.5). Engines
+have to accept full affine matrices in their skinning shader, which most do, and
+this is the one hard requirement the method places on the target platform.
 
 ## What it costs
 

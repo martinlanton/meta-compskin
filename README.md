@@ -55,9 +55,12 @@ SkinCompressor(model_data=model_data, iterations=10000).run("exports/head_compre
 
 Export `head.npz` from a Maya scene with `MayaBlendshapeExporter("head_GEO").export(...)`,
 or build it from any DCC ([Preparing data](docs/user_guide/preparing_data.md)).
-The output holds skin weights and, per blendshape, the motion of every joint;
-what to do with it is in [Maya rig workflow](docs/user_guide/maya_rig_workflow.md)
-and [Pipeline integration](docs/user_guide/pipeline_integration.md).
+The output holds skin weights and, per blendshape, the motion of every joint.
+Back in Maya, select the head and `build_skinned_rig("exports/head_compressed.npz")`
+creates the joints, binds a duplicate and keys one blendshape per frame; what the
+data means and how to wire it into your own rig is in
+[Maya rig workflow](docs/user_guide/maya_rig_workflow.md) and
+[Pipeline integration](docs/user_guide/pipeline_integration.md).
 Complete scripts are in [`examples/`](examples/).
 
 ## Project structure
@@ -68,6 +71,7 @@ src/metacompskin/
 ├── model_fit.py             SkinCompressor                                  (solver)
 ├── animation_generator.py   AnimationFrameGenerator                         (reference runtime)
 ├── maya_exporter.py         MayaBlendshapeExporter        (runs inside Maya, numpy only)
+├── maya_rig_builder.py      build_skinned_rig             (runs inside Maya, numpy only)
 ├── maya_loader.py           OBJ loading through Maya
 ├── constants.py             per-model defaults
 └── rig/riglogic.py          rig logic of the sample heads

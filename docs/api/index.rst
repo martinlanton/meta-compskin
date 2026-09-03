@@ -17,6 +17,7 @@ everywhere, including inside Maya where PyTorch is not installed:
        MayaBlendshapeExporter,
        MayaBlendshapeModelData,
        SkinCompressor,
+       build_skinned_rig,
    )
 
 Pipeline classes
@@ -36,6 +37,7 @@ Maya integration
    :maxdepth: 2
 
    maya_exporter
+   maya_rig_builder
    maya_loader
 
 Supporting modules

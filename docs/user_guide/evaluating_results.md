@@ -75,9 +75,11 @@ Three ways to look:
 2. **Error as colour.** Write the per-vertex `err` array above as a vertex
    colour or a weight map on the neutral mesh. The paper's Figure 3 uses red
    for 5 mm and above.
-3. **In the rig.** Build the rig from the compressed data
-   ([Maya rig workflow](maya_rig_workflow.md)) and scrub the shapes with the
-   original blendShape node visible on a duplicate.
+3. **In the rig.** Select the head in Maya and call
+   `build_skinned_rig("exports/head_compressed.npz")`: it skins a duplicate and
+   keys one blendshape per frame, so scrubbing the timeline steps through every
+   shape next to the original blendShape mesh
+   ([Maya rig workflow](maya_rig_workflow.md), section 4).
 
 ## Full animations
 

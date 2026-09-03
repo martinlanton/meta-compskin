@@ -6,6 +6,10 @@ prescribe a specific tool or node setup. Every studio wires rigs differently, an
 data is simple enough that once the principles are clear, you can adapt them to
 whatever you already have.
 
+If you only want to see the result in Maya, skip to
+[section 4.1](#41-the-built-in-builder): `build_skinned_rig` builds joints, skin
+cluster and a one-shape-per-frame animation on the selected head in one call.
+
 You do not need to know the maths behind the paper. You do need to be comfortable
 with skin clusters, joints, blendshape weights, and the idea of a matrix as
 "a transform". If you have not read the [Overview](../concepts/overview.md), start
@@ -161,13 +165,22 @@ The deltas are built from linearised rotations plus translations. Adding two suc
 deltas does not give a clean rotation: the resulting `M[j]` will contain a small amount
 of scale and shear. This is expected, and it is what the compressor optimised for.
 
-A Maya joint can hold that: it has translate, rotate, scale and shear channels, and
-setting all of them reproduces an arbitrary affine matrix exactly. Any pipeline that
-**assumes joints are rigid** (rotation and translation only, or rotation and uniform
-scale) will drop the scale and shear and introduce error. How much depends on the
-shapes; large jaw motion is the usual place it shows. If your target pipeline has that
-restriction, test it early on the shapes with the biggest motion, and read the
-compression error report knowing that this restriction adds to it.
+A Maya **transform** can hold that: with translate, rotate, scale and shear set, it
+reproduces an arbitrary affine matrix exactly. A Maya **joint** cannot. Although a
+joint inherits the shear attributes, its matrix is built as scale, rotate, translate
+only (`[S][RO][R][JO][IS][T]` in the node documentation) and the shear is ignored.
+`xform -matrix` drops it silently too, and so does setting the matrix through the
+API on a joint. The clean way around it is to key the affine matrix on a plain
+transform directly above each joint and leave the joint at the identity: the joint's
+*world* matrix then carries the shear, and the skin cluster only ever looks at world
+matrices. That is what `build_skinned_rig` does (section 4.1).
+
+Any pipeline that **assumes joints are rigid** (rotation and translation only, or
+rotation and uniform scale) will drop the scale and shear and introduce error. How
+much depends on the shapes; large jaw motion is the usual place it shows. If your
+target pipeline has that restriction, test it early on the shapes with the biggest
+motion, and read the compression error report knowing that this restriction adds to
+it.
 
 Do not "fix" the transforms by orthonormalising them or converting them to
 quaternions. That silently discards part of the data.
@@ -237,7 +250,9 @@ or through your studio's rig builder, the sequence and the checks are the same.
 2. **Create the joints.** `P` joints, flat under one root, at rest. Choose their
    display positions (section 3.1). Zero joint orient. Leave rotate order at its
    default and turn off segment scale compensation, so the matrix you feed in later is
-   what the joint actually has.
+   what the joint actually has. Because a joint drops shear (section 3.5), give each
+   joint a plain transform as its parent and drive that transform instead; the joint
+   itself stays at the identity.
 
 3. **Bind the mesh.** Create a skin cluster with those joints, classic linear
    skinning, maximum influences `K`. Set the weights from the `weights` array, joint
@@ -251,8 +266,8 @@ or through your studio's rig builder, the sequence and the checks are the same.
 
 5. **Drive the joints.** For every joint, at every frame, compute `M[j]` with the
    mixing rule (section 3.4), apply the rest-pose offset (section 3.6), and set the
-   joint's translate, rotate, scale and shear from the resulting matrix. Two common
-   ways to do this:
+   driver transform's translate, rotate, scale and shear from the resulting matrix.
+   Two common ways to do this:
 
    - **Live in the graph.** Per joint, a weighted-sum-of-matrices node (Maya's
      `wtAddMatrix` does precisely `Σ weight[i] · matrix[i]`), with the identity at
@@ -281,6 +296,56 @@ or through your studio's rig builder, the sequence and the checks are the same.
    The shape-value attributes and the driver network are Maya-side scaffolding and
    can be dropped once baked. The original blendshape node should not be exported.
 
+### 4.1 The built-in builder
+
+`metacompskin.maya_rig_builder.build_skinned_rig` runs steps 1 to 3 and the
+"baked" variant of step 5 for you. It needs only numpy inside Maya (install the
+package into `mayapy` as described in
+[Installation](../getting_started/installation.md#inside-autodesk-maya)). With the
+neutral head selected in the scene:
+
+```python
+import numpy as np
+from metacompskin.maya_rig_builder import build_skinned_rig
+
+names = list(np.load("D:/exports/head.npz")["shape_names"])  # from the exporter
+rig = build_skinned_rig("D:/exports/head_compressed.npz", shape_names=names)
+```
+
+What it does:
+
+- **Duplicates the selected mesh** and skins the duplicate. The original, and any
+  blendShape node on it, is left untouched so you can compare the two side by side.
+  Pass `duplicate_mesh=False` to skin the selected mesh itself instead; that is only
+  allowed on a mesh without deformers, and the call aborts before creating anything
+  if it finds a blendShape, skin cluster or any other deformer, so the face is never
+  deformed twice. Either way the mesh must be the neutral pose of the mesh that was
+  compressed, with the same vertex order; the builder checks that and refuses
+  anything else.
+- **Creates `P` joints** under one root joint. If you gave the compressor your own
+  joint matrices they are used as-is from `restXform`. Otherwise each joint is placed,
+  with identity orientation, at the weight-averaged position of the vertices it
+  influences, so it sits over the region it drives (section 3.1). Each joint sits
+  under a driver transform named `<joint>_driver` that carries the animation, for the
+  reason given in section 3.5.
+- **Binds** a classic linear skin cluster, maximum influences `K`, weight
+  normalisation off, and writes the `weights` array verbatim.
+- **Keys one blendshape per frame**: frame 0 is the neutral pose, frame `k + 1` is
+  shape `k` at 100%. Tangents are stepped, so scrubbing never blends two shapes. The
+  root gets a keyed `currentShape` enum attribute that shows the shape name in the
+  channel box; pass `shape_names` (the exporter writes them into the model file) or
+  accept the `shape_000` placeholders.
+- **Sets the timeline** to `0 .. S` and returns the node names (`rig.mesh`,
+  `rig.root`, `rig.joints`, `rig.drivers`, `rig.skin_cluster`).
+
+The mesh may sit anywhere in the scene; the builder folds its world matrix and the
+centring offset (section 3.6) into the joint animation. Scrub the timeline with the
+original head next to the duplicate: every frame should match the corresponding
+target up to the error the compressor reported. To attach the result to a
+character, parent the root joint where the head joint would go; to play a shot
+instead of one shape per frame, compute `M[j]` per frame with the mixing rule and key
+the drivers, or wire the live network from step 5.
+
 ---
 
 ## 5. Common pitfalls
@@ -291,7 +356,7 @@ or through your studio's rig builder, the sequence and the checks are the same.
 | Every shape is slightly wrong, error grows when shapes are combined | Matrix convention (row vs column) or the rest-pose offset `c` is wrong. |
 | One shape produces a different expression than its name | Shape order does not match `shape_names.json`. |
 | Shapes look right individually but the face doubles up | The original blendshape node is still active on the same mesh. |
-| Result is close but visibly stiff on big motions | Scale and shear were discarded somewhere: joint channels not connected, bake missing channels, or a rigid-only importer. |
+| Result is close but visibly stiff on big motions | Scale and shear were discarded somewhere: the matrix was set on a joint instead of a transform above it (section 3.5), channels not connected, a bake missing channels, or a rigid-only importer. |
 | Result was good, then degraded after a rigger "cleaned up" the skin | Weights were smoothed, pruned or re-normalised after binding. Reload them from the file. |
 | Face deforms around the wrong point when the head is parented | Root of the virtual joints does not match the mesh's bind space, or a virtual joint was parented under another one. |
 | Numbers in the file look like a different scale than the scene | Unit mismatch between the exported shapes and the current scene. |
@@ -319,8 +384,8 @@ you where you landed. Change it there, not by deleting joints in Maya.
 **How does this relate to the joint-based facial rigs I already know?**
 Superficially it is the same thing: joints, skin weights, joint animation. The
 difference is that the joint animation is derived from blendshape values by a fixed
-linear rule, and the joints carry scale and shear. You are not animating the joints;
-your shape values are.
+linear rule, and the joint world matrices carry scale and shear. You are not
+animating the joints; your shape values are.
 
 **What if my engine only supports rigid joints?**
 Test the big shapes early (section 3.5). If the error is unacceptable, the fix is on
@@ -344,8 +409,7 @@ data; the paper is explicit that this is a requirement of the method.
   (`paper/compressed_skinning_for_facial_blendshapes.md`): the formal version of
   section 3.4 above. [From blendshapes to skinning](../concepts/blendshapes_to_skinning.md)
   walks through it.
-- The companion `meta-compskin_private_tests` repository has a `build_maya_rig.py`
-  script that reads the file, builds the joints and skin cluster, and reconstructs
-  every shape as a blendshape target for side-by-side checking. It is a verification
-  tool rather than a production rig builder, but it shows the file being read in
-  Maya end to end.
+- `src/metacompskin/maya_rig_builder.py`: the built-in builder from section 4.1.
+  It shows the file being read in Maya end to end, including the weight upload
+  through the API and the bind-pose compensation. `examples/example_maya_rig_build.py`
+  is the shortest way to run it.

@@ -6,7 +6,8 @@ blendshape animation (SIGGRAPH 2024). See the README for usage examples.
 Note:
     The public classes are re-exported lazily (PEP 562) so that torch-free
     environments — in particular Maya / mayapy running
-    :class:`MayaBlendshapeExporter` — can import the package without having
+    :class:`MayaBlendshapeExporter` or :func:`build_skinned_rig` — can import
+    the package without having
     PyTorch installed. Torch is only imported when a class that needs it
     (e.g. ``SkinCompressor``) is first accessed.
 """
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from metacompskin.animation_generator import AnimationFrameGenerator
     from metacompskin.maya_exporter import MayaBlendshapeExporter
+    from metacompskin.maya_rig_builder import build_skinned_rig
     from metacompskin.model_data import BlendshapeModelData, MayaBlendshapeModelData
     from metacompskin.model_fit import SkinCompressor
 
@@ -28,6 +30,7 @@ _EXPORTS = {
     "MayaBlendshapeExporter": "metacompskin.maya_exporter",
     "MayaBlendshapeModelData": "metacompskin.model_data",
     "SkinCompressor": "metacompskin.model_fit",
+    "build_skinned_rig": "metacompskin.maya_rig_builder",
 }
 
 __all__ = [
@@ -37,6 +40,7 @@ __all__ = [
     "MayaBlendshapeModelData",
     "SkinCompressor",
     "__version__",
+    "build_skinned_rig",
 ]
 
 

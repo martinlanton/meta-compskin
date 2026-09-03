@@ -70,7 +70,8 @@ The `viz` extra adds matplotlib.
 ## Inside Autodesk Maya
 
 Only needed to run `MayaBlendshapeExporter` (exporting a blendshape model from a
-scene) or `MayaBlendshapeModelData.from_obj_files` without a `mayapy` path.
+scene), `build_skinned_rig` (building the skinned result back in Maya) or
+`MayaBlendshapeModelData.from_obj_files` without a `mayapy` path.
 
 The package imports its heavy dependencies lazily, so **PyTorch is not required
 inside Maya**. Install without dependencies to keep it that way:
