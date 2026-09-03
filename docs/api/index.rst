@@ -1,20 +1,26 @@
 API Reference
 =============
 
-Complete API documentation for the metacompskin package.
+Reference documentation generated from the docstrings in ``src/metacompskin``.
+For task-oriented instructions see the :doc:`user guide <../user_guide/compressing>`;
+for the file layouts consumed and produced by these classes see
+:doc:`../concepts/data_formats`.
 
-.. autosummary::
-   :toctree: _autosummary
-   :recursive:
+The package re-exports its public classes lazily, so the short import form works
+everywhere, including inside Maya where PyTorch is not installed:
 
-   metacompskin.model_data
-   metacompskin.model_fit
-   metacompskin.animation_generator
-   metacompskin.maya_exporter
-   metacompskin.maya_loader
+.. code-block:: python
 
-Core Modules
-------------
+   from metacompskin import (
+       AnimationFrameGenerator,
+       BlendshapeModelData,
+       MayaBlendshapeExporter,
+       MayaBlendshapeModelData,
+       SkinCompressor,
+   )
+
+Pipeline classes
+----------------
 
 .. toctree::
    :maxdepth: 2
@@ -22,6 +28,22 @@ Core Modules
    model_data
    model_fit
    animation_generator
+
+Maya integration
+----------------
+
+.. toctree::
+   :maxdepth: 2
+
    maya_exporter
    maya_loader
 
+Supporting modules
+------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   constants
+   utils
+   riglogic

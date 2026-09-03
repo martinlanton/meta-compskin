@@ -68,7 +68,7 @@ class SkinCompressor:
 
     The optimization solves the non-convex problem (Equation 9):
         min_{w,N} Σᵢ Σₖ (Eᵢₖ)^p
-        where Eᵢₖ = |vₖ,ᵢ - v₀,ᵢ - Σⱼ wᵢ,ⱼ Nₖ,ⱼ v₀,ᵢ|
+        where Eᵢₖ = ‖vₖ,ᵢ - v₀,ᵢ - Σⱼ wᵢ,ⱼ Nₖ,ⱼ v₀,ᵢ‖
 
     This decomposes the input matrix A ∈ ℝ^(3S×N) into:
         A ≈ B·C
@@ -273,6 +273,7 @@ class SkinCompressor:
         Error Metrics Reported:
             - maxDelta (MXE): Maximum absolute error across all vertices/shapes
             - meanDelta (MAE): Mean absolute error
+
             These match Table 1 in the paper for comparison with Dem Bones.
 
         Example:
@@ -425,16 +426,18 @@ class SkinCompressor:
 
         Mathematical Formulation:
             The Laplacian matrix L enforces smoothness via:
-                Regularization_term = α · ||L·BX||²
+                Regularization_term = α · ‖L·BX‖²
 
             where α (self.alpha) controls regularization strength.
 
-            The rigidity Laplacian is defined as:
-                Lᵢ,ⱼ = { -1         if j = i
-                       { 1/|N(i)|   if j ∈ N(i)  (1-ring neighbors)
-                       { 0          otherwise
+            The rigidity Laplacian is defined as::
 
-            where N(i) denotes all 1-ring neighbors of vertex i.
+                Lᵢ,ⱼ = { -1          if j = i
+                       { 1/deg(i)    if j ∈ N(i)  (1-ring neighbors)
+                       { 0           otherwise
+
+            where N(i) denotes all 1-ring neighbors of vertex i and deg(i)
+            is their count.
 
         Construction Process:
             1. Build adjacency matrix from mesh faces
@@ -500,7 +503,7 @@ class SkinCompressor:
             6. Repeat for specified number of iterations
 
         Loss Function (Equation 9):
-            Loss = (Σᵢ,ₖ |Eᵢ,ₖ|^p)^(2/p) + α·Laplacian_term
+            Loss = (Σᵢ,ₖ ‖Eᵢ,ₖ‖^p)^(2/p) + α·Laplacian_term
 
             where:
                 Eᵢ,ₖ = vₖ,ᵢ - v₀,ᵢ - Σⱼ wᵢ,ⱼ Nₖ,ⱼ v₀,ᵢ

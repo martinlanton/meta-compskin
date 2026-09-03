@@ -23,8 +23,8 @@ ruff check .                   # lint
 ruff check --fix .             # auto-fix lint issues
 mypy src/ --ignore-missing-imports  # type checking
 
-# Docs
-cd docs && sphinx-apidoc -f -o api ../src/metacompskin && make html
+# Docs (API pages are hand-maintained in docs/api/; do not run sphinx-apidoc)
+cd docs && make html
 ```
 
 ## Architecture

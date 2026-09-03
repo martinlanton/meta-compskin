@@ -13,12 +13,12 @@ def add_homogeneous_coordinate(M, dim):
 
     Mathematical Background:
         Homogeneous coordinates allow affine transformations to be
-        represented as matrix multiplication:
+        represented as matrix multiplication::
 
-        [ x' ]   [ a  b  c  tx ] [ x ]
-        [ y' ] = [ d  e  f  ty ] [ y ]
-        [ z' ]   [ g  h  i  tz ] [ z ]
-                                 [ 1 ]
+            [ x' ]   [ a  b  c  tx ] [ x ]
+            [ y' ] = [ d  e  f  ty ] [ y ]
+            [ z' ]   [ g  h  i  tz ] [ z ]
+                                     [ 1 ]
 
         The last coordinate (1) enables translation via matrix multiplication.
 

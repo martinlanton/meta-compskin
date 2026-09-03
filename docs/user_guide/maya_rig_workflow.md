@@ -1,4 +1,4 @@
-# Using Compressed Skinning Output in Maya: A Guide for Riggers
+# Maya rig workflow
 
 This guide explains what the compressor produces and how to think about it, so you
 can bring the result into your own Maya rig and your own pipeline. It does not
@@ -8,7 +8,9 @@ whatever you already have.
 
 You do not need to know the maths behind the paper. You do need to be comfortable
 with skin clusters, joints, blendshape weights, and the idea of a matrix as
-"a transform".
+"a transform". If you have not read the [Overview](../concepts/overview.md), start
+there; if you still need to get the blendshapes out of Maya, see
+[Preparing data](preparing_data.md).
 
 ---
 
@@ -23,13 +25,10 @@ vertices by this much", the data now says "when *jawOpen* is at 100%, move each 
 these 40 joints by this much", and the skin weights spread that joint motion back onto
 the vertices.
 
-```mermaid
-flowchart LR
-    A[Animator controls] --> B[Your rig logic<br/>unchanged]
-    B --> C[Shape values<br/>one number per blendshape]
-    C --> D[Joint transforms<br/>one matrix per joint]
-    D --> E[Skin cluster<br/>weights from the compressor]
-    E --> F[Deformed head mesh]
+```
+ animator      your rig logic      shape values         joint transforms       skin cluster
+ controls  ──►  (unchanged)   ──►  one number per  ──►  one matrix per   ──►  weights from  ──►  deformed head
+                                   blendshape           joint                 the compressor
 ```
 
 The only part of your rig that changes is the deformer. Everything upstream of the
@@ -330,15 +329,21 @@ data; the paper is explicit that this is a requirement of the method.
 
 ---
 
-## 7. Where to look in this repository
+## 7. Where to look next
 
+- [Data formats](../concepts/data_formats.md): the exact layout of every array,
+  for whoever writes the importer.
+- [Pipeline integration](pipeline_integration.md): the same recipe written for
+  an engine or runtime programmer, with the formulas in full.
+- [Compressing](compressing.md#custom-joints): how to supply your own joint
+  placement to the compressor so that `restXform` matches your rig.
 - `src/metacompskin/animation_generator.py`: the reference implementation of the
   mixing rule and the skinning, in plain NumPy. If your implementation disagrees
   with it, your implementation is wrong.
-- `paper/compressed_skinning_for_facial_blendshapes.md`, Section 3 and Equation 7:
-  the formal version of section 3.4 above.
-- `DOCUMENTATION.md`, *Custom Joint Matrices*: how to supply your own joint placement
-  to the compressor so that `restXform` matches your rig.
+- The paper, Section 3 and Equation 7
+  (`paper/compressed_skinning_for_facial_blendshapes.md`): the formal version of
+  section 3.4 above. [From blendshapes to skinning](../concepts/blendshapes_to_skinning.md)
+  walks through it.
 - The companion `meta-compskin_private_tests` repository has a `build_maya_rig.py`
   script that reads the file, builds the joints and skin cluster, and reconstructs
   every shape as a blendshape target for side-by-side checking. It is a verification
