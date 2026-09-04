@@ -7,7 +7,7 @@
 [[`Paper`] https://arxiv.org/abs/2406.11597 ]
 
 `metacompskin` converts a facial blendshape model into a linear blend skinning
-model driven by about 40 virtual joints. The skinned result reproduces the
+model driven by a set of virtual joints (100 by default). The skinned result reproduces the
 blendshapes to a mean error below 0.05 mm while using 5 to 7× less memory and
 evaluating 2 to 3× faster than dense skinning decompositions such as Dem Bones.
 It is the reference implementation of the SIGGRAPH 2024 paper.
@@ -57,8 +57,11 @@ Export `head.npz` from a Maya scene with `MayaBlendshapeExporter("head_GEO").exp
 or build it from any DCC ([Preparing data](docs/user_guide/preparing_data.md)).
 The output holds skin weights and, per blendshape, the motion of every joint.
 Back in Maya, select the head and `build_skinned_rig("exports/head_compressed.npz")`
-creates the joints, binds a duplicate and keys one blendshape per frame; what the
-data means and how to wire it into your own rig is in
+creates the joints, binds a duplicate and keys one blendshape per frame. Or do all
+three steps from Maya in one call: `compress_and_build_rig(python_executable=...)`
+exports the selected head, compresses it in a subprocess (on CUDA when available)
+and builds the rig in the same session. What the data means and how to wire it into
+your own rig is in
 [Maya rig workflow](docs/user_guide/maya_rig_workflow.md) and
 [Pipeline integration](docs/user_guide/pipeline_integration.md).
 Complete scripts are in [`examples/`](examples/).
@@ -72,6 +75,8 @@ src/metacompskin/
 ├── animation_generator.py   AnimationFrameGenerator                         (reference runtime)
 ├── maya_exporter.py         MayaBlendshapeExporter        (runs inside Maya, numpy only)
 ├── maya_rig_builder.py      build_skinned_rig             (runs inside Maya, numpy only)
+├── maya_pipeline.py         compress_and_build_rig        (runs inside Maya; export, compress, build)
+├── cli.py                   python -m metacompskin        (compression from a shell)
 ├── maya_loader.py           OBJ loading through Maya
 ├── constants.py             per-model defaults
 └── rig/riglogic.py          rig logic of the sample heads

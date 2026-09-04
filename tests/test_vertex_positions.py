@@ -68,7 +68,7 @@ class TestVertexPositions(unittest.TestCase):
 
     def test_vertex_positions_short_iter(self):
         compressor = model_fit.SkinCompressor(
-            model_data=self.model_data, iterations=600
+            model_data=self.model_data, iterations=600, number_of_bones=40
         )
         compressor.run(output_location=self.result_file)
 
@@ -95,7 +95,7 @@ class TestVertexPositions(unittest.TestCase):
         expected_vertices = expected["vertices"]  # (30, N, 3)
 
         compressor = model_fit.SkinCompressor(
-            model_data=self.model_data, iterations=10000
+            model_data=self.model_data, iterations=10000, number_of_bones=40
         )
         compressor.run(output_location=self.result_file)
 

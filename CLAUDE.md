@@ -38,7 +38,7 @@ Frozen dataclass. Loads `.npz` files containing blendshape deltas, rest vertices
 
 **`model_fit.py` — `SkinCompressor`**
 The optimization engine. Decomposes the blendshape delta matrix **A** (shape `3S×N`, where S=blendshapes, N=vertices) into **B·C**:
-- **B** (`3S×4P`): sparse transformation matrices (~90% zeros), P≈40 bones
+- **B** (`3S×4P`): sparse transformation matrices (~90% zeros), P=100 bones by default
 - **C** (`4P×N`): sparse LBS weights (K≈8 non-zero influences per vertex)
 
 Two-phase training using proximal gradient descent + Adam over ~20k iterations. Laplacian regularization enforces spatial smoothness. CUDA support gives ~60× speedup over CPU.
@@ -67,7 +67,7 @@ Input .npz (blendshapes)
 
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
-| `P` | 40 | Number of virtual bones |
+| `P` | 100 | Number of virtual bones |
 | `K` | 8 | Max LBS influences per vertex |
 | `L` | 6000 | Non-zeros in transformation matrices |
 | `alpha` | model-specific | Laplacian regularization strength |

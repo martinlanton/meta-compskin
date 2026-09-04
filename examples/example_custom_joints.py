@@ -77,12 +77,12 @@ def example_with_generated_joints():
 
 
 def example_default_behavior():
-    """Example using default behavior (identity matrices, 40 bones)."""
+    """Example using default behavior (identity matrices, 100 bones)."""
     model_data = BlendshapeModelData.from_npz("path/to/your/model.npz")
 
     # When rest_joint_matrices is not provided (or is None),
     # the compressor uses the default behavior:
-    # - 40 bones
+    # - 100 bones
     # - Identity matrices at the origin
     compressor = SkinCompressor(
         model_data=model_data,
@@ -90,7 +90,7 @@ def example_default_behavior():
         # rest_joint_matrices=None  # This is the default
     )
 
-    print(f"Number of bones: {compressor.number_of_bones}")  # Will print 40
+    print(f"Number of bones: {compressor.number_of_bones}")  # Will print 100
 
     compressor.run(output_location="output/default_compressed.npz")
 

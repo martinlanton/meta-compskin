@@ -21,7 +21,7 @@ in the vertex shader, and the per-frame data is tiny (one transform per joint).
 
 Take the blendshape model and find a skinned model that behaves the same way.
 
-The tool invents a small set of **virtual joints** (40 by default), decides
+The tool invents a small set of **virtual joints** (100 by default), decides
 which vertices each joint should influence and by how much (the **skin
 weights**), and works out, for every blendshape, how each joint must move to
 reproduce that shape (the **joint motion**). Nothing is modelled by hand. An
@@ -32,7 +32,7 @@ skinned mesh matches the original shapes as closely as it can.
        Blendshape model                          Compressed skinning model
   ┌──────────────────────────┐              ┌──────────────────────────────┐
   │ neutral head             │              │ neutral head                 │
-  │ shape 1: offset/vertex   │   solve      │ 40 virtual joints            │
+  │ shape 1: offset/vertex   │   solve      │ 100 virtual joints           │
   │ shape 2: offset/vertex   │  ───────►    │ skin weights (8 per vertex)  │
   │ ...                      │              │ shape 1: motion of joints    │
   │ shape S: offset/vertex   │              │ shape 2: motion of joints    │

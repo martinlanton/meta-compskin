@@ -38,7 +38,7 @@ integrate the output in a pipeline or an engine.
 |---|---|---|
 | Stored per shape | one offset per vertex | one small transform per joint, mostly zeros |
 | Per-frame cost | proportional to vertices × active shapes | a sparse sum, then standard GPU skinning |
-| Memory (40 joints, human head) | dense | 81 to 87 KB, 5 to 7× less than dense skinning |
+| Memory (human head, the paper's 40-joint setup) | dense | 81 to 87 KB, 5 to 7× less than dense skinning |
 | Accuracy | exact | mean error < 0.05 mm, worst case a few mm (paper, Table 1) |
 | Runs on | anything that evaluates blendshapes | anything with a skinning shader that accepts full affine matrices |
 

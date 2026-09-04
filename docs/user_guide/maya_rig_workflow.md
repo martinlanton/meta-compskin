@@ -9,6 +9,8 @@ whatever you already have.
 If you only want to see the result in Maya, skip to
 [section 4.1](#41-the-built-in-builder): `build_skinned_rig` builds joints, skin
 cluster and a one-shape-per-frame animation on the selected head in one call.
+[Section 4.2](#42-one-call-from-maya) goes further and runs export, compression
+and build from a single call inside Maya.
 
 You do not need to know the maths behind the paper. You do need to be comfortable
 with skin clusters, joints, blendshape weights, and the idea of a matrix as
@@ -24,9 +26,9 @@ A blendshape rig stores, for every shape, a position offset for every vertex. Th
 accurate but heavy: with 250 shapes and 6000 vertices, that is 1.5 million offsets.
 
 The compressor replaces that with a **skinned mesh driven by a small set of joints**
-(about 40 by default). Instead of "when *jawOpen* is at 100%, move each of these 6000
+(100 by default). Instead of "when *jawOpen* is at 100%, move each of these 6000
 vertices by this much", the data now says "when *jawOpen* is at 100%, move each of
-these 40 joints by this much", and the skin weights spread that joint motion back onto
+these 100 joints by this much", and the skin weights spread that joint motion back onto
 the vertices.
 
 ```
@@ -346,6 +348,82 @@ character, parent the root joint where the head joint would go; to play a shot
 instead of one shape per frame, compute `M[j]` per frame with the mixing rule and key
 the drivers, or wire the live network from step 5.
 
+### 4.2 One call from Maya
+
+`metacompskin.maya_pipeline.compress_and_build_rig` chains the exporter
+([Preparing data](preparing_data.md)), the compressor and the builder from
+section 4.1 without leaving Maya. Select the head (or select nothing if it is the
+only mesh in the scene) and run:
+
+```python
+from metacompskin.maya_pipeline import compress_and_build_rig
+
+result = compress_and_build_rig(python_executable="D:/envs/compskin/python.exe")
+print(result.model_path, result.compressed_path, result.rig.joints)
+```
+
+What happens:
+
+1. The mesh's blendShape node is captured with `MayaBlendshapeExporter` and written
+   to `<output_dir>/<mesh>.npz`. Pass `joints=[...]` to export joint rest matrices
+   too; the compressor then uses them (section 3.1). Pass `mesh=` to name the head
+   explicitly.
+2. `python -m metacompskin` runs in a subprocess with the interpreter you name. Maya's
+   own Python has no PyTorch, so this has to be a separate environment. Set the
+   `METACOMPSKIN_PYTHON` environment variable once and you can omit the argument; with
+   neither, the pipeline looks for one itself (see `python_executable` below).
+   The package directory loaded in Maya is put on that subprocess's `PYTHONPATH`, so
+   `metacompskin` only needs PyTorch, numpy and scipy over there. Compression runs on
+   CUDA whenever that interpreter's torch sees a GPU. The call blocks until it is
+   done and streams the solver's progress to the script editor; expect minutes on a
+   GPU and hours on CPU at the default 10 000 iterations.
+3. `build_skinned_rig` builds the rig on a duplicate of the same mesh, with the
+   blendShape envelope switched off for the duration so the duplicate is taken in the
+   neutral pose. Your original mesh, its blendShape node and its current weights are
+   left as they were.
+
+Every argument is optional except, in practice, the interpreter. In the order
+they matter to a rigger:
+
+| Argument | Default | What it does |
+|----------|---------|--------------|
+| `python_executable` | `METACOMPSKIN_PYTHON` environment variable, else auto-detected | Path to a Python that has PyTorch installed, for example `D:/envs/compskin/python.exe` or `/opt/envs/compskin/bin/python`. Maya's own Python cannot do the compression. If you set the environment variable once before starting Maya, you can omit this. With neither, the pipeline probes likely interpreters (a `.venv` beside the package, `python` on PATH, conda, pyenv and virtualenvwrapper environments) for one that imports torch, prefers one that sees a GPU, and prints which it picked. That search takes a few seconds per environment, so once you know the answer put it in the variable. |
+| `mesh` | the selection, or the only mesh in the scene | Name of the head to process. Give it when the selection is empty and the scene has several meshes, or when you want to be explicit. |
+| `iterations` | 10 000 | How long the solver works, per phase. 600 gives a rough preview in about a minute on a GPU; the default gives production quality and takes minutes on a GPU or hours on CPU. |
+| `output_dir` | `compskin` beside the scene file | Folder for the two files the run leaves behind: `<mesh>.npz` (the exported shapes) and `<mesh>_compressed.npz` (the result). An unsaved scene falls back to a temporary folder. |
+| `number_of_bones` | 100 | How many virtual joints the head gets. Fewer means cheaper at runtime but less accurate; the error climbs steeply below about 20. |
+| `max_influences` | 8 | How many joints may drive one vertex. Match what your engine's skinning supports (4 is common on mobile); fewer influences means a less smooth weight map. Must be smaller than the number of joints. |
+| `joints` | none | Names of existing joints whose rest positions should be exported with the shapes. When given, the compressor uses that many joints, placed where yours are, so the result lines up with your skeleton. |
+| `use_joint_matrices` | `True` | Only matters together with `joints`. Set to `False` to export the joint positions but let the compressor place its own joints instead. |
+| `total_nnz_B_rt` | 6000 | The sparsity budget: how many non-zero motion values the whole result may contain. Larger fits better and compresses less. It cannot exceed 6 × shapes × joints, so with only a handful of shapes give a smaller number. |
+| `alpha` | 10 | Smoothness of the skin weights. Lower it if the result looks blurred or loses wrinkles; raise it if the weight map looks speckled. |
+| `power` | 2 | Which error the solver minimises. 2 minimises the average error; 12 minimises the worst error at the cost of smoothness and needs more iterations and joints. |
+| `init_weight` | 0.001 | Size of the random starting values. Rarely worth touching. |
+| `name` | `compskin` | Prefix for every node the build creates (`compskin_root`, `compskin_joint_000`, `compskin_skinned`, `compskin_skinCluster`). Change it to build several results side by side. |
+
+The compressor settings are the same as those of `SkinCompressor` itself
+([Compressing](compressing.md#settings)). Leaving one out means the compressor's
+own default is used.
+
+The call returns a `PipelineResult` with `source_mesh`, `model_path`,
+`compressed_path` and `rig` (the nodes that were built, see section 4.1). Keep the
+two files: you can rebuild the rig from `compressed_path` later with
+`build_skinned_rig` without compressing again, or evaluate the result outside Maya
+([Evaluating results](evaluating_results.md)).
+
+A typical preview run, then a production run, then a run that reuses the
+character's own joints:
+
+```python
+compress_and_build_rig(python_executable="D:/envs/compskin/python.exe", iterations=600)
+compress_and_build_rig(python_executable="D:/envs/compskin/python.exe", name="final")
+compress_and_build_rig(
+    python_executable="D:/envs/compskin/python.exe",
+    joints=["jaw_JNT", "cheek_L_JNT", "cheek_R_JNT"],
+    name="onRig",
+)
+```
+
 ---
 
 ## 5. Common pitfalls
@@ -376,7 +454,7 @@ want it to handle and keep the rest of the rig as it was.
 Not directly. The joint deltas for one shape depend on the weights, and the weights
 depend on all shapes. Edit the target, rerun the compressor, and rebuild.
 
-**Do I have to use all 40 joints?**
+**Do I have to use all 100 joints?**
 The joint count is a compression setting, not a property of your mesh. Fewer joints
 mean a smaller runtime cost and a larger error; the report from the compressor tells
 you where you landed. Change it there, not by deleting joints in Maya.

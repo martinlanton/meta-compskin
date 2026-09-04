@@ -18,6 +18,7 @@ everywhere, including inside Maya where PyTorch is not installed:
        MayaBlendshapeModelData,
        SkinCompressor,
        build_skinned_rig,
+       compress_and_build_rig,
    )
 
 Pipeline classes
@@ -36,6 +37,7 @@ Maya integration
 .. toctree::
    :maxdepth: 2
 
+   maya_pipeline
    maya_exporter
    maya_rig_builder
    maya_loader
@@ -46,6 +48,7 @@ Supporting modules
 .. toctree::
    :maxdepth: 1
 
+   cli
    constants
    utils
    riglogic

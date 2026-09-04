@@ -5,45 +5,20 @@ point at a specific interpreter; otherwise the newest Maya install in the
 standard locations is used.
 """
 
-import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
+from conftest import MAYA_SCRIPTS, requires_mayapy
 
 from metacompskin.animation_generator import AnimationFrameGenerator
 from metacompskin.maya_rig_builder import weighted_joint_centroids
 
-_MAYAPY_LOCATIONS = [
-    ("/Applications/Autodesk", "maya*/Maya.app/Contents/bin/mayapy"),
-    ("/usr/autodesk", "maya*/bin/mayapy"),
-    ("C:/Program Files/Autodesk", "Maya*/bin/mayapy.exe"),
-]
-_SCRIPT = Path(__file__).parent / "maya_scripts" / "build_rig_in_maya.py"
-_SRC = Path(__file__).parents[1] / "src"
+pytestmark = requires_mayapy
+
+_SCRIPT = MAYA_SCRIPTS / "build_rig_in_maya.py"
 _ATOL = 1e-4
 _SOURCE_NAME = "head_GEO"
-
-
-def _find_mayapy() -> str | None:
-    if os.environ.get("MAYAPY"):
-        return os.environ["MAYAPY"]
-    candidates = sorted(
-        str(path)
-        for base, pattern in _MAYAPY_LOCATIONS
-        for path in Path(base).glob(pattern)
-    )
-    return candidates[-1] if candidates else None
-
-
-MAYAPY = _find_mayapy()
-
-pytestmark = pytest.mark.skipif(
-    MAYAPY is None, reason="mayapy not found (set MAYAPY to run the Maya tests)"
-)
 
 
 def _reference_frames(model_data, compressed: Path) -> np.ndarray:
@@ -85,7 +60,7 @@ def _scene_space(world: np.ndarray, points: np.ndarray) -> np.ndarray:
 
 
 @pytest.fixture(scope="module")
-def maya_report(compressed_model, tmp_path_factory):
+def maya_report(compressed_model, run_maya_script, tmp_path_factory):
     model_data, compressor, compressed = compressed_model
     workdir = tmp_path_factory.mktemp("maya")
     shape_names = [f"grid_shape_{k}" for k in range(model_data.n_blendshapes)]
@@ -104,31 +79,11 @@ def maya_report(compressed_model, tmp_path_factory):
     )
     report_path = workdir / "report.json"
 
-    env = {
-        **os.environ,
-        "PYTHONPATH": os.pathsep.join([str(_SRC), os.environ.get("PYTHONPATH", "")]),
-    }
-    result = subprocess.run(
-        [
-            MAYAPY,
-            str(_SCRIPT),
-            str(compressed),
-            str(compressed_custom),
-            str(scene_input),
-            str(report_path),
-        ],
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
+    report = run_maya_script(
+        _SCRIPT,
+        [str(compressed), str(compressed_custom), str(scene_input), str(report_path)],
+        report_path,
     )
-    if result.returncode != 0 or not report_path.exists():
-        sys.stderr.write(result.stdout)
-        sys.stderr.write(result.stderr)
-        pytest.fail(f"mayapy exited with {result.returncode}; see captured output")
-
-    report = json.loads(report_path.read_text())
     report["expected_centred_frames"] = _reference_frames(model_data, compressed)
     report["rest_verts"] = model_data.rest_verts
     report["weights"] = archive["weights"]

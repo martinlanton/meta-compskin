@@ -70,8 +70,16 @@ The `viz` extra adds matplotlib.
 ## Inside Autodesk Maya
 
 Only needed to run `MayaBlendshapeExporter` (exporting a blendshape model from a
-scene), `build_skinned_rig` (building the skinned result back in Maya) or
+scene), `build_skinned_rig` (building the skinned result back in Maya),
+`compress_and_build_rig` (all of it from one call) or
 `MayaBlendshapeModelData.from_obj_files` without a `mayapy` path.
+
+`compress_and_build_rig` compresses in a subprocess and needs a second Python
+environment with PyTorch installed (the one set up above). Point the
+`METACOMPSKIN_PYTHON` environment variable at that interpreter, or pass its path
+as `python_executable`. With neither, it searches the usual places (a `.venv`
+beside the package, `python` on PATH, conda, pyenv and virtualenvwrapper
+environments) for an interpreter that imports torch and prefers one with CUDA.
 
 The package imports its heavy dependencies lazily, so **PyTorch is not required
 inside Maya**. Install without dependencies to keep it that way:

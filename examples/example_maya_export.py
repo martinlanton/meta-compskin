@@ -111,7 +111,7 @@ def compress_exported_data():
     raw = np.load("exports/head.npz", allow_pickle=True)
     print(f"Shapes: {list(raw['shape_names'])}")
 
-    # Plain compression (40 virtual bones at the origin):
+    # Plain compression (100 virtual bones at the origin):
     compressor = SkinCompressor(model_data=model_data, iterations=10000)
     compressor.run(output_location="exports/head_compressed.npz")
 

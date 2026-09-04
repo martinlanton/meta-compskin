@@ -21,6 +21,18 @@ compressor.run(output_location="exports/head_compressed.npz")
 - The device is chosen automatically: CUDA if `torch.cuda.is_available()`,
   otherwise CPU.
 
+From a shell, the same run is:
+
+```bash
+python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations 10000
+```
+
+Every constructor setting below has a matching option (`--number-of-bones`,
+`--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`). Joint matrices stored
+in the model file by the exporter are used unless you pass
+`--ignore-joint-matrices`. This is the command the Maya pipeline runs in a
+subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
+
 ## Settings
 
 Constructor arguments:
@@ -30,28 +42,28 @@ Constructor arguments:
 | `model_data` | required | The input model. |
 | `iterations` | 10 000 | Steps **per phase**; two phases run, so 20 000 steps in total. |
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
+| `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
+| `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
+| `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
+| `power` | 2 | Exponent $p$ of the error norm. |
+| `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
 
 Attributes you can change after construction and before `run`:
 
 | Attribute | Default | Meaning |
 |-----------|---------|---------|
-| `number_of_bones` | 40 | $P$. Ignored if `rest_joint_matrices` was given. |
-| `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
-| `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `alpha` | from `model_data.alpha` | Laplacian smoothness weight. |
-| `power` | 2 | Exponent $p$ of the error norm. |
-| `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
 
 ```python
-compressor = SkinCompressor(model_data=model_data, iterations=15000)
-compressor.number_of_bones = 60
-compressor.total_nnz_B_rt = 9000
+compressor = SkinCompressor(
+    model_data=model_data, iterations=15000, number_of_bones=60, total_nnz_B_rt=9000
+)
 compressor.alpha = 20.0
 compressor.run("exports/head_60j.npz")
 ```
 
 `alpha` is looked up by model name in `metacompskin.constants`
-(`aura` and `jupiter` 10, `proteus` and `bowen` 50, anything else 10). Your
+(the sample heads and anything unknown get 10). Your
 own heads get 10 unless you pass `alpha=` to `from_npz` or set it on the
 compressor. Lower values suit dense meshes, higher values sparse ones.
 
@@ -61,11 +73,12 @@ Start with the defaults; they are the paper's settings and give good results
 on human heads of 6 000 to 25 000 vertices with 250 to 320 shapes.
 
 **Fewer shapes than the defaults assume.** $L$ cannot exceed the number of
-coefficients, $6 S P$. With 3 shapes and 40 joints that is 720, so the default
+coefficients, $6 S P$. With 3 shapes and 100 joints that is 1800, so the default
 6000 is meaningless and `topk` will fail. Cap it:
 
 ```python
-compressor.total_nnz_B_rt = min(6000, int(0.8 * 6 * model_data.n_blendshapes * compressor.number_of_bones))
+budget = min(6000, int(0.8 * 6 * model_data.n_blendshapes * 100))
+compressor = SkinCompressor(model_data=model_data, total_nnz_B_rt=budget)
 ```
 
 **Runtime budget is tight.** Reduce $P$ before reducing $L$; the number of
@@ -85,7 +98,7 @@ and produces a valid file with a few times the final error.
 
 ## Custom joints
 
-By default the joints are 40 anonymous handles with identity rest transforms.
+By default the joints are 100 anonymous handles with identity rest transforms.
 If your rig already has facial joints, or you want a specific joint count and
 placement for organisational reasons, pass their rest matrices:
 

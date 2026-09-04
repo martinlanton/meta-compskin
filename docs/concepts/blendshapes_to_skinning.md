@@ -11,7 +11,7 @@ optimisation yet; that is [How the solver works](how_the_solver_works.md).
 |--------|---------|-------------|
 | $N$ | number of vertices | `n_vertices` |
 | $S$ | number of blendshapes | `n_blendshapes` |
-| $P$ | number of virtual joints (the paper says *bones*) | `number_of_bones`, default 40 |
+| $P$ | number of virtual joints (the paper says *bones*) | `number_of_bones`, default 100 |
 | $K$ | maximum joints influencing one vertex | `max_influences`, default 8 |
 | $\hat{\mathbf{v}}_{0,i}$ | position of vertex $i$ in the neutral pose | `rest_verts[i]` |
 | $\hat{\mathbf{v}}_{k,i}$ | position of vertex $i$ in shape $k$ | `rest_verts[i] + deltas[k, i]` |

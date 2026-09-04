@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from metacompskin.animation_generator import AnimationFrameGenerator
     from metacompskin.maya_exporter import MayaBlendshapeExporter
+    from metacompskin.maya_pipeline import compress_and_build_rig
     from metacompskin.maya_rig_builder import build_skinned_rig
     from metacompskin.model_data import BlendshapeModelData, MayaBlendshapeModelData
     from metacompskin.model_fit import SkinCompressor
@@ -31,6 +32,7 @@ _EXPORTS = {
     "MayaBlendshapeModelData": "metacompskin.model_data",
     "SkinCompressor": "metacompskin.model_fit",
     "build_skinned_rig": "metacompskin.maya_rig_builder",
+    "compress_and_build_rig": "metacompskin.maya_pipeline",
 }
 
 __all__ = [
@@ -41,6 +43,7 @@ __all__ = [
     "SkinCompressor",
     "__version__",
     "build_skinned_rig",
+    "compress_and_build_rig",
 ]
 
 

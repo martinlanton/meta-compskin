@@ -130,7 +130,7 @@ tables are in millimetres). How to interpret them is in
 | Setting | Default | Increasing it | Decreasing it |
 |---------|---------|---------------|---------------|
 | `iterations` | 10 000 per phase | lower error, longer solve; returns diminish past ~20 000 total | faster, rougher; 600 is enough to check a pipeline |
-| `number_of_bones` ($P$) | 40 | more capacity, higher runtime cost per frame | cheaper runtime, error rises quickly below ~20 |
+| `number_of_bones` ($P$) | 100 | more capacity, higher runtime cost per frame | cheaper runtime, error rises quickly below ~20 |
 | `max_influences` ($K$) | 8 | smoother weight maps, more shader cost | must stay ≥ 4 or so; must be smaller than $P$ |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
 | `alpha` | per model, 10 or 50 | smoother, blurrier result | sharper, risk of noisy weights; lower for dense meshes |

@@ -29,6 +29,8 @@ _SPARSITY_THRESHOLD = 1e-4  # Threshold for counting non-zero values in sparse m
 _REST_JOINT_MATRICES_NDIM = (
     3  # Expected number of dimensions for rest_joint_matrices: (P, 4, 4)
 )
+_DEFAULT_NUMBER_OF_BONES = 100  # P
+_DEFAULT_MAX_INFLUENCES = 8  # K
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -89,9 +91,9 @@ class SkinCompressor:
         rest_joint_matrices_3x4: Optional 3×4 affine matrices for joint rest poses.
             Extracted from the 4×4 matrices provided during initialization.
             If None, identity matrices are used (default behavior).
-        number_of_bones: Number of proxy bones P (default 40 when rest_joint_matrices
-            is not provided, otherwise set to the number of matrices provided).
-            Paper uses P=40 for good quality/performance balance (Table 1).
+        number_of_bones: Number of proxy bones P (default 100 when neither the
+            argument nor rest_joint_matrices is given; otherwise the number of
+            matrices provided). The paper's experiments use P=40 (Table 1).
         max_influences: Max non-zero weights per vertex K (default 8).
             Standard GPU skinning pipeline constraint (Section 2.2).
         total_nnz_B_rt: Total non-zeros in B_rt matrix (default 6000).
@@ -129,11 +131,16 @@ class SkinCompressor:
         Tables 1-3 for performance metrics and comparisons.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         model_data: BlendshapeModelData,
         iterations: int = 10000,
         rest_joint_matrices: np.ndarray | list | None = None,
+        number_of_bones: int | None = None,
+        max_influences: int = _DEFAULT_MAX_INFLUENCES,
+        total_nnz_B_rt: int = 6000,
+        init_weight: float = 1e-3,
+        power: int = 2,
     ):
         """Initializes the SkinCompressor.
 
@@ -143,9 +150,24 @@ class SkinCompressor:
             rest_joint_matrices: Optional array of 4×4 transformation matrices for joint rest poses.
                 If provided, must be shape (P, 4, 4) where P is the number of bones.
                 Each matrix should be a standard 4×4 homogeneous transformation matrix.
-                When provided, overrides the default number_of_bones (40) to match the
-                number of matrices supplied. If None (default), uses identity matrices
-                at the origin, maintaining backward compatibility.
+                When provided, the number of bones is the number of matrices supplied.
+                If None (default), uses identity matrices at the origin, maintaining
+                backward compatibility.
+            number_of_bones: Number of proxy bones P. Defaults to 100 when omitted.
+                Only needed without rest_joint_matrices; if both are given they
+                must agree.
+            max_influences: Maximum non-zero weights per vertex K (default 8).
+                Must be smaller than the number of bones.
+            total_nnz_B_rt: Sparsity budget L, the number of non-zero coefficients
+                kept in B_rt across the whole model (default 6000). Cannot exceed
+                6·S·P.
+            init_weight: Scale of the random initial values of B_rt (default 1e-3).
+            power: Exponent p of the error norm in the loss (default 2; 12 for a
+                worst-case fit, Section 4.1).
+
+        Raises:
+            ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
+                number_of_bones disagrees with the number of matrices given.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -181,6 +203,15 @@ class SkinCompressor:
                     f"got shape {rest_joint_matrices.shape}"
                 )
 
+            if number_of_bones is not None and number_of_bones != len(
+                rest_joint_matrices
+            ):
+                raise ValueError(
+                    f"number_of_bones={number_of_bones} conflicts with the "
+                    f"{len(rest_joint_matrices)} rest_joint_matrices given; omit "
+                    "number_of_bones or make them agree."
+                )
+
             # Extract 3×4 affine portion (first 3 rows of each matrix)
             self.rest_joint_matrices_3x4 = rest_joint_matrices[:, :3, :].astype(
                 np.float32
@@ -188,11 +219,13 @@ class SkinCompressor:
             self.number_of_bones = len(rest_joint_matrices)
         else:
             self.rest_joint_matrices_3x4 = None
-            self.number_of_bones = 40
-        self.max_influences = 8  # number of weights per vertex
-        self.total_nnz_B_rt = 6000  # number of non-zero values into B_rt matrix
-        self.init_weight = 1e-3
-        self.power = 2
+            self.number_of_bones = (
+                _DEFAULT_NUMBER_OF_BONES if number_of_bones is None else number_of_bones
+            )
+        self.max_influences = max_influences  # number of weights per vertex
+        self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
+        self.init_weight = init_weight
+        self.power = power
 
         self.seed = 12345
         torch.manual_seed(self.seed)

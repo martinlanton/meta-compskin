@@ -26,8 +26,6 @@ Table 1, in millimetres, gives the reference for human-sized heads at
 |-------|----------|--------|----------|----------|
 | Aura | 5 944 | 267 | 5.82 | 0.038 |
 | Jupiter | 5 944 | 319 | 8.26 | 0.030 |
-| Proteus | 23 735 | 287 | 4.8 | 0.030 |
-| Bowen | 23 735 | 253 | 5.99 | 0.034 |
 
 A mean error under 0.05 mm is invisible. A maximum of a few millimetres is
 usually a single vertex inside the mouth bag or at an eyelid crease on one
