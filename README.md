@@ -50,7 +50,9 @@ Details and platform paths: [Installation](docs/getting_started/installation.md)
 from metacompskin import BlendshapeModelData, SkinCompressor
 
 model_data = BlendshapeModelData.from_npz("exports/head.npz")
-SkinCompressor(model_data=model_data, iterations=10000).run("exports/head_compressed.npz")
+SkinCompressor(model_data=model_data, iterations=10000).run(
+    "exports/head_compressed.npz"
+)
 ```
 
 Export `head.npz` from a Maya scene with `MayaBlendshapeExporter("head_GEO").export(...)`,

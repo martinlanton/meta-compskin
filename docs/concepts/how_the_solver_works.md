@@ -33,8 +33,8 @@ weight maps. This is the same regularisation used by Dem Bones.
 In code (`SkinCompressor.train`):
 
 ```python
-loss = (B_X - A).pow(power).mean().pow(2 / power)      # data term, p = power
-loss += alpha * (L @ B_X.T).pow(2).mean()              # Laplacian term
+loss = (B_X - A).pow(power).mean().pow(2 / power)  # data term, p = power
+loss += alpha * (L @ B_X.T).pow(2).mean()  # Laplacian term
 ```
 
 where `B_X` is the current reconstruction $\mathbf{B}\mathbf{C}$, `A` the

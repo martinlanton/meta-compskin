@@ -77,11 +77,14 @@ data = np.load("head_compressed.npz")
 S = data["shapeXform"].shape[0] // 3
 P = data["weights"].shape[1]
 
-def delta_transform(k: int, j: int) -> np.ndarray:      # (3, 4)
+
+def delta_transform(k: int, j: int) -> np.ndarray:  # (3, 4)
     return data["shapeXform"][3 * k : 3 * k + 3, 4 * j : 4 * j + 4]
 
-active = [(k, j) for k in range(S) for j in range(P)
-          if np.any(delta_transform(k, j) != 0)]
+
+active = [
+    (k, j) for k in range(S) for j in range(P) if np.any(delta_transform(k, j) != 0)
+]
 ```
 
 ### Centring

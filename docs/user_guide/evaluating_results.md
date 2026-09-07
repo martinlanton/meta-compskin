@@ -52,7 +52,9 @@ for k, name in enumerate(names):
     c[k] = 1.0
     reconstructed_delta = generator.compute_frame_vertices(c) - rest_centred
     err = np.linalg.norm(reconstructed_delta - model_data.deltas[k], axis=1)
-    print(f"{name:32s} mean {err.mean():.4f}  max {err.max():.3f}  at vertex {err.argmax()}")
+    print(
+        f"{name:32s} mean {err.mean():.4f}  max {err.max():.3f}  at vertex {err.argmax()}"
+    )
 ```
 
 Sort by `max` and look at the top few. The vertex index tells you where; the

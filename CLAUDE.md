@@ -90,8 +90,8 @@ Follow the **Three Laws** strictly:
 **Structure**: Arrange-Act-Assert, every test.
 ```python
 def test_weight_normalization():
-    weights = torch.tensor([0.3, 0.5, 0.2])       # Arrange
-    normalized = normalize_weights(weights)         # Act
+    weights = torch.tensor([0.3, 0.5, 0.2])  # Arrange
+    normalized = normalize_weights(weights)  # Act
     assert torch.allclose(normalized.sum(), torch.tensor(1.0))  # Assert
 ```
 
@@ -191,11 +191,11 @@ When implementing paper equations, document the full mathematical formulation, d
 
 ```python
 def equation_7_skinning_transforms(
-    blend_weights: torch.Tensor,    # (S,) — c_k
-    delta_transforms: torch.Tensor, # (S, P, 3, 4) — N_{k,j}
+    blend_weights: torch.Tensor,  # (S,) — c_k
+    delta_transforms: torch.Tensor,  # (S, P, 3, 4) — N_{k,j}
     n_shapes: int,
     n_bones: int,
-) -> torch.Tensor:                  # (P, 3, 4) — M_j
+) -> torch.Tensor:  # (P, 3, 4) — M_j
     """Compute skinning transformations (Equation 7): M_j = I + Σ c_k * N_{k,j}.
 
     Args:
@@ -212,7 +212,7 @@ def equation_7_skinning_transforms(
     """
     identity = torch.zeros(n_bones, 3, 4, device=blend_weights.device)
     identity[:, :, :3] = torch.eye(3, device=blend_weights.device)
-    weighted_deltas = torch.einsum('s,spij->pij', blend_weights, delta_transforms)
+    weighted_deltas = torch.einsum("s,spij->pij", blend_weights, delta_transforms)
     return identity + weighted_deltas
 ```
 

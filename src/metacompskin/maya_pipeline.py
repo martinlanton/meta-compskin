@@ -120,7 +120,7 @@ class PipelineResult:
     rig: MayaSkinRig
 
 
-def compress_and_build_rig(  # noqa: PLR0913
+def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     python_executable: str | Path | None = None,
     output_dir: str | Path | None = None,
     mesh: str | None = None,

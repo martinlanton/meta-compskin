@@ -37,7 +37,9 @@ from metacompskin.maya_exporter import MayaBlendshapeExporter
 MayaBlendshapeExporter("head_GEO").export("D:/exports/head.npz")
 
 # If the mesh has several blendShape nodes, say which one:
-MayaBlendshapeExporter("head_GEO", blendshape_node="face_BS").export("D:/exports/head.npz")
+MayaBlendshapeExporter("head_GEO", blendshape_node="face_BS").export(
+    "D:/exports/head.npz"
+)
 ```
 
 Points are read in object space after the full deformer stack, so anything
@@ -73,7 +75,7 @@ already transposed into the package's column-vector convention.
 ```python
 MayaBlendshapeExporter(
     "head_GEO",
-    joints=["face_00_JNT", "face_01_JNT", ...],   # at least 9
+    joints=["face_00_JNT", "face_01_JNT", ...],  # at least 9
 ).export("D:/exports/head.npz")
 ```
 
@@ -136,7 +138,7 @@ Assemble the arrays and save them as described in
 import numpy as np
 from metacompskin import BlendshapeModelData
 
-deltas = np.stack([target - rest_verts for target in targets])   # (S, N, 3)
+deltas = np.stack([target - rest_verts for target in targets])  # (S, N, 3)
 
 np.savez(
     "head.npz",
@@ -174,10 +176,11 @@ Two consequences:
 ## Checking the input before compressing
 
 ```python
-print(model_data)                 # name, S, N
-model_data.print_details()        # shapes and dtypes of every array
+print(model_data)  # name, S, N
+model_data.print_details()  # shapes and dtypes of every array
 
 import numpy as np
+
 per_shape = np.linalg.norm(model_data.deltas, axis=2).max(axis=1)
 print("largest displacement per shape:", per_shape.round(2))
 ```

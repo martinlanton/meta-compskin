@@ -29,6 +29,7 @@ _SPARSITY_THRESHOLD = 1e-4  # Threshold for counting non-zero values in sparse m
 _REST_JOINT_MATRICES_NDIM = (
     3  # Expected number of dimensions for rest_joint_matrices: (P, 4, 4)
 )
+_JOINT_MATRIX_SHAPE = (4, 4)  # Expected shape of each rest joint matrix
 _DEFAULT_NUMBER_OF_BONES = 100  # P
 _DEFAULT_MAX_INFLUENCES = 8  # K
 
@@ -131,7 +132,7 @@ class SkinCompressor:
         Tables 1-3 for performance metrics and comparisons.
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         model_data: BlendshapeModelData,
         iterations: int = 10000,
@@ -190,33 +191,30 @@ class SkinCompressor:
         # Handle rest joint matrices and set number of bones accordingly
         self.rest_joint_matrices_3x4: np.ndarray | None
         if rest_joint_matrices is not None:
-            # Convert to numpy array if needed
-            rest_joint_matrices = np.array(rest_joint_matrices)
+            # Bind the array to its own name: the parameter also accepts a list,
+            # so reusing it would keep the wider type.
+            matrices = np.asarray(rest_joint_matrices)
 
             # Validate shape
             if (
-                rest_joint_matrices.ndim != _REST_JOINT_MATRICES_NDIM
-                or rest_joint_matrices.shape[1:] != (4, 4)
+                matrices.ndim != _REST_JOINT_MATRICES_NDIM
+                or matrices.shape[1:] != _JOINT_MATRIX_SHAPE
             ):
                 raise ValueError(
                     f"rest_joint_matrices must have shape (P, 4, 4), "
-                    f"got shape {rest_joint_matrices.shape}"
+                    f"got shape {matrices.shape}"
                 )
 
-            if number_of_bones is not None and number_of_bones != len(
-                rest_joint_matrices
-            ):
+            if number_of_bones is not None and number_of_bones != len(matrices):
                 raise ValueError(
                     f"number_of_bones={number_of_bones} conflicts with the "
-                    f"{len(rest_joint_matrices)} rest_joint_matrices given; omit "
+                    f"{len(matrices)} rest_joint_matrices given; omit "
                     "number_of_bones or make them agree."
                 )
 
             # Extract 3×4 affine portion (first 3 rows of each matrix)
-            self.rest_joint_matrices_3x4 = rest_joint_matrices[:, :3, :].astype(
-                np.float32
-            )
-            self.number_of_bones = len(rest_joint_matrices)
+            self.rest_joint_matrices_3x4 = matrices[:, :3, :].astype(np.float32)
+            self.number_of_bones = len(matrices)
         else:
             self.rest_joint_matrices_3x4 = None
             self.number_of_bones = (
@@ -609,6 +607,10 @@ class SkinCompressor:
 
             loss = weighed_error.pow(self.power).mean().pow(2 / self.power)
             if self.alpha is not None:
+                if self.L is None:
+                    raise RuntimeError(
+                        "Laplacian is not initialized; train must be called via run()."
+                    )
                 # add Laplacian regularization term
                 loss += self.alpha * (self.L @ (B_X).transpose(0, 1)).pow(2).mean()
 

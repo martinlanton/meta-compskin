@@ -40,8 +40,8 @@ def skinning_transforms(shape_xform: np.ndarray, c: np.ndarray) -> np.ndarray:
     M = np.zeros((3, 4 * P))
     for k in np.flatnonzero(c):
         M += c[k] * shape_xform[3 * k : 3 * k + 3]
-    M = M.reshape(3, P, 4).transpose(1, 0, 2)      # (P, 3, 4)
-    M[:, :, :3] += np.eye(3)                       # add identity
+    M = M.reshape(3, P, 4).transpose(1, 0, 2)  # (P, 3, 4)
+    M[:, :, :3] += np.eye(3)  # add identity
     return M
 ```
 

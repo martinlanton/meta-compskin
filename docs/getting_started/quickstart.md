@@ -78,8 +78,8 @@ from metacompskin import AnimationFrameGenerator
 generator = AnimationFrameGenerator("output/aura_compressed.npz", model_data)
 
 coefficients = np.zeros(model_data.n_blendshapes)
-coefficients[12] = 1.0                       # shape 12 fully on
-vertices = generator.compute_frame_vertices(coefficients)   # (N, 3)
+coefficients[12] = 1.0  # shape 12 fully on
+vertices = generator.compute_frame_vertices(coefficients)  # (N, 3)
 ```
 
 For the sample heads, which carry their rig-logic metadata, you can also drive

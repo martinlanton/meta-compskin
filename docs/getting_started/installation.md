@@ -40,7 +40,8 @@ Check that the GPU is visible:
 
 ```python
 import torch
-print(torch.cuda.is_available())      # True
+
+print(torch.cuda.is_available())  # True
 print(torch.cuda.get_device_name(0))  # e.g. NVIDIA RTX A6000
 ```
 
@@ -101,6 +102,7 @@ path at the top of your script instead:
 
 ```python
 import sys
+
 sys.path.insert(0, r"D:/path/to/meta-compskin/src")
 ```
 

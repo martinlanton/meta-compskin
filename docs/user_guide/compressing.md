@@ -107,7 +107,7 @@ import json
 import numpy as np
 
 with open("matrices.json", encoding="utf-8") as f:
-    joint_matrices = np.array(json.load(f)).reshape(-1, 4, 4)   # (P, 4, 4)
+    joint_matrices = np.array(json.load(f)).reshape(-1, 4, 4)  # (P, 4, 4)
 
 compressor = SkinCompressor(
     model_data=model_data,
@@ -164,7 +164,9 @@ entry per 200 iterations) for plotting convergence.
 ```python
 for npz in sorted(Path("exports").glob("*_head.npz")):
     model_data = BlendshapeModelData.from_npz(npz)
-    SkinCompressor(model_data=model_data).run(npz.with_name(npz.stem + "_compressed.npz"))
+    SkinCompressor(model_data=model_data).run(
+        npz.with_name(npz.stem + "_compressed.npz")
+    )
 ```
 
 ## After the run
