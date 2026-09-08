@@ -82,7 +82,9 @@ class CompressionSettings:
     (see :class:`SkinCompressor`).
 
     Attributes:
-        iterations: Optimisation iterations per phase.
+        iterations: Optimisation iterations per phase (an int), or steps per
+            stage of an annealed influence budget (a tuple; see
+            :func:`metacompskin.model_fit.build_training_schedule`).
         number_of_bones: Number of virtual bones P.
         max_influences: Maximum non-zero weights per vertex K.
         total_nnz_B_rt: Sparsity budget L.
@@ -94,7 +96,7 @@ class CompressionSettings:
             (when ``joints`` were given), so P and the joint placement follow them.
     """
 
-    iterations: int = 10000
+    iterations: int | tuple[int, ...] = 10000
     number_of_bones: int | None = None
     max_influences: int | None = None
     total_nnz_B_rt: int | None = None  # noqa: N815 (matches SkinCompressor)
@@ -127,7 +129,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     output_dir: str | Path | None = None,
     mesh: str | None = None,
     joints: list[str] | None = None,
-    iterations: int = 10000,
+    iterations: int | tuple[int, ...] = 10000,
     number_of_bones: int | None = None,
     max_influences: int | None = None,
     total_nnz_B_rt: int | None = None,
@@ -159,7 +161,9 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
             the scene when nothing is selected.
         joints: Optional joint names whose rest matrices are exported and used
             for the compression (see :class:`MayaBlendshapeExporter`).
-        iterations: Optimisation iterations per phase (default 10000).
+        iterations: Optimisation iterations per phase (default 10000, an int),
+            or steps per stage of an annealed influence budget (a tuple; see
+            :func:`metacompskin.model_fit.build_training_schedule`).
         number_of_bones: Number of virtual bones P (default 100).
         max_influences: Maximum non-zero weights per vertex K (default 8).
         total_nnz_B_rt: Sparsity budget L (default 6000).
@@ -388,6 +392,20 @@ def default_output_dir(scene_path: str) -> Path:
     return Path(tempfile.mkdtemp(prefix="compskin_"))
 
 
+def _format_ints(value: int | tuple[int, ...]) -> str:
+    """Formats an ``--iterations``-style value for the CLI.
+
+    Args:
+        value: A single step count, or one step count per stage.
+
+    Returns:
+        ``str(value)`` for an int, comma-joined for a tuple.
+    """
+    if isinstance(value, int):
+        return str(value)
+    return ",".join(str(item) for item in value)
+
+
 def compression_command(
     python: Path, model_path: Path, compressed_path: Path, settings: CompressionSettings
 ) -> list[str]:
@@ -409,7 +427,7 @@ def compression_command(
         str(model_path),
         str(compressed_path),
         "--iterations",
-        str(settings.iterations),
+        _format_ints(settings.iterations),
     ]
     options = {
         "--number-of-bones": settings.number_of_bones,

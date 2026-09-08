@@ -73,7 +73,7 @@ class TestDefaultOutputDir:
 class TestCompressionCommand:
     def test_runs_the_package_cli_with_every_setting(self):
         settings = CompressionSettings(
-            iterations=500,
+            iterations=(500, 500, 1000),
             number_of_bones=12,
             max_influences=4,
             total_nnz_B_rt=900,
@@ -97,7 +97,7 @@ class TestCompressionCommand:
         ]
         assert command[5:] == [
             "--iterations",
-            "500",
+            "500,500,1000",
             "--number-of-bones",
             "12",
             "--max-influences",

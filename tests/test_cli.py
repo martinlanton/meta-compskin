@@ -100,3 +100,30 @@ def test_cli_forwards_the_seed(grid_model_npz, tmp_path):
 
     np.testing.assert_array_equal(first, second)
     assert not np.array_equal(first, third)
+
+
+def test_cli_accepts_iterations_per_stage(grid_model_npz, tmp_path):
+    output = tmp_path / "compressed.npz"
+
+    main(
+        [
+            str(grid_model_npz),
+            str(output),
+            "--iterations",
+            "100,100,300",
+            "--total-nnz-b-rt",
+            "100",
+            "--number-of-bones",
+            "10",
+            "--max-influences",
+            "2",
+        ]
+    )
+
+    weights = np.load(output)["weights"]
+    assert ((weights != 0).sum(axis=1) <= 2).all()
+
+
+def test_cli_rejects_malformed_iterations(grid_model_npz, tmp_path):
+    with pytest.raises(SystemExit):
+        main([str(grid_model_npz), str(tmp_path / "o.npz"), "--iterations", "3,x"])
