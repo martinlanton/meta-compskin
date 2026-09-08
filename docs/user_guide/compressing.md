@@ -240,6 +240,28 @@ for npz in sorted(Path("exports").glob("*_head.npz")):
     )
 ```
 
+### Comparing schedules and seeds
+
+`scripts/compare_schedules.py` automates the batch job that answers "is an
+annealed schedule actually better than the plain baseline, or within seed
+noise?" (see [Annealing the influence budget](#annealing-the-influence-budget)
+and [Reproducibility](#reproducibility) above). It runs the baseline, a
+phase-count control, and two annealed variants over several seeds, all at
+the same total step count, and prints mean/std/min/max of the final MXE and
+MAE per variant:
+
+```bash
+python scripts/compare_schedules.py exports/head.npz runs/compare \
+    --number-of-bones 200 --max-influences 8 --total-nnz-b-rt 50000 \
+    --alpha 7 --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
+```
+
+Read the table by comparing the annealed variants' mean against the
+baseline's own std: an improvement smaller than that std is not
+distinguishable from seed luck. `results.csv` under the output directory has
+one row per run for further analysis; `--dry-run` prints the planned runs
+without compressing anything.
+
 ## After the run
 
 Read the last two lines, `maxDelta` and `meanDelta`, then go to
