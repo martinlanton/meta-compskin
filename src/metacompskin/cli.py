@@ -6,7 +6,7 @@ accepts) and writes the compressed archive. This is what the Maya pipeline
 launches in a subprocess, but it works on its own too::
 
     python -m metacompskin exports/head.npz exports/head_compressed.npz \\
-        --iterations 10000 --number-of-bones 100
+        --iterations 10000 --number-of-bones 100 --seed 7
 
 If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--init-weight", type=float, default=None)
     parser.add_argument("--power", type=int, default=None, help="p")
     parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
         "--ignore-joint-matrices",
         action="store_true",
@@ -100,6 +101,7 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "total_nnz_b_rt",
         "init_weight",
         "power",
+        "seed",
     ):
         value = getattr(args, option)
         if value is not None:

@@ -10,6 +10,7 @@ Handles loading model data, running optimization, and saving results.
 # the root directory of this source tree.
 
 import time
+from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 
@@ -32,6 +33,7 @@ _REST_JOINT_MATRICES_NDIM = (
 _JOINT_MATRIX_SHAPE = (4, 4)  # Expected shape of each rest joint matrix
 _DEFAULT_NUMBER_OF_BONES = 100  # P
 _DEFAULT_MAX_INFLUENCES = 8  # K
+_DEFAULT_SEED = 12345
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -59,6 +61,22 @@ def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_ma
     )
     adj.data[:] = 1.0  # deduplicate: shared edges appear in two faces → clip to binary
     return adj
+
+
+@dataclass(frozen=True)
+class ReconstructionError:
+    """Final fit error of a compression run, in model units.
+
+    Attributes:
+        max_abs: Largest per-axis absolute error over all vertices and shapes (MXE).
+        mean_abs: Mean per-axis absolute error (MAE).
+
+    References:
+        Paper Table 1 ("MXE", "MAE"); docs/user_guide/evaluating_results.md.
+    """
+
+    max_abs: float
+    mean_abs: float
 
 
 class SkinCompressor:
@@ -104,12 +122,16 @@ class SkinCompressor:
             Small value starts optimization near zero.
         power: Lp norm exponent for loss function (default 2).
             p=2 gives L2 norm, p=12 for HD fit (Section 4.1).
-        seed: Random seed for reproducibility (12345).
+        seed: Torch random seed for the initial deltas and weights (default
+            12345). Set explicitly to compare local minima the optimizer
+            converges to (Section 3, non-convexity).
         alpha: Laplacian regularization strength from model_data.
             Controls smoothness: lower for high-density, higher for low-density.
         device: PyTorch device ('cuda' or 'cpu').
         loss_list: Training loss history.
         abserr_list: Training absolute error history.
+        reconstruction_error: Final MXE/MAE as a ReconstructionError, set by
+            run(). None until run() has completed.
 
     Example:
         >>> from metacompskin.model_data import BlendshapeModelData
@@ -142,6 +164,7 @@ class SkinCompressor:
         total_nnz_B_rt: int = 6000,
         init_weight: float = 1e-3,
         power: int = 2,
+        seed: int = _DEFAULT_SEED,
     ):
         """Initializes the SkinCompressor.
 
@@ -165,6 +188,8 @@ class SkinCompressor:
             init_weight: Scale of the random initial values of B_rt (default 1e-3).
             power: Exponent p of the error norm in the loss (default 2; 12 for a
                 worst-case fit, Section 4.1).
+            seed: Torch random seed for the initial deltas and weights
+                (default 12345).
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -225,7 +250,7 @@ class SkinCompressor:
         self.init_weight = init_weight
         self.power = power
 
-        self.seed = 12345
+        self.seed = seed
         torch.manual_seed(self.seed)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -241,6 +266,7 @@ class SkinCompressor:
 
         self.loss_list: list[float] = []
         self.abserr_list: list[float] = []
+        self.reconstruction_error: ReconstructionError | None = None
 
         self.L: torch.Tensor | None = None
         self.rest_pose: torch.Tensor | None = None
@@ -298,6 +324,7 @@ class SkinCompressor:
         Side Effects:
             - Prints model information and training progress
             - Updates self.loss_list and self.abserr_list
+            - Sets self.reconstruction_error to the final MXE/MAE
             - Creates output file at output_location
             - Reports final error metrics (MAE, MXE)
 
@@ -380,6 +407,9 @@ class SkinCompressor:
         meanDelta = np.abs(orig_deltas - our_deltas).mean()
         print(f"maxDelta {maxDelta}")
         print(f"meanDelta {meanDelta}")
+        self.reconstruction_error = ReconstructionError(
+            max_abs=float(maxDelta), mean_abs=float(meanDelta)
+        )
 
         shapeXforms = B.detach().cpu().numpy()
 

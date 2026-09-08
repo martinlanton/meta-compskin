@@ -90,10 +90,11 @@ The paper used 20 000 total; the default `iterations=10000` matches it.
   projection picks an essentially random $K$ joints per vertex; the optimiser
   sorts it out within the first few hundred iterations (Figure 1 of the paper
   shows this convergence).
-- The torch seed is fixed to 12345 in the constructor. Runs on the same
-  hardware and library versions are bit-for-bit repeatable; the regression
-  tests rely on this. Different GPUs, CPU versus GPU, or different torch
-  versions produce equally valid but not identical solutions.
+- The torch seed is the `seed` argument, 12345 by default. Runs with the same
+  seed on the same hardware and library versions are bit-for-bit repeatable;
+  the regression tests rely on this. Different GPUs, CPU versus GPU, or
+  different torch versions produce equally valid but not identical
+  solutions — as does a different seed, since the objective is non-convex.
 
 ## Reading the log
 

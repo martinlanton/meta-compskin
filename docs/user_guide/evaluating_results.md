@@ -32,6 +32,10 @@ usually a single vertex inside the mouth bag or at an eyelid crease on one
 extreme shape; whether it matters depends on where it is, which is why the
 next step is to look.
 
+Both numbers are also on the compressor after `run`, as
+`compressor.reconstruction_error.max_abs` and `.mean_abs`, for scripts that
+need them without parsing stdout.
+
 ## Computing errors per shape
 
 `AnimationFrameGenerator` is the reference runtime. Reconstruct each shape on

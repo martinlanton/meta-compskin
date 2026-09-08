@@ -89,6 +89,7 @@ class CompressionSettings:
         init_weight: Scale of the random initial deltas.
         power: Exponent p of the error norm.
         alpha: Laplacian smoothness weight.
+        seed: Torch random seed for the initial deltas and weights.
         use_joint_matrices: Use the ``rest_joint_matrices`` the exporter wrote
             (when ``joints`` were given), so P and the joint placement follow them.
     """
@@ -100,6 +101,7 @@ class CompressionSettings:
     init_weight: float | None = None
     power: int | None = None
     alpha: float | None = None
+    seed: int | None = None
     use_joint_matrices: bool = True
 
 
@@ -132,6 +134,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     init_weight: float | None = None,
     power: int | None = None,
     alpha: float | None = None,
+    seed: int | None = None,
     use_joint_matrices: bool = True,
     name: str = "compskin",
 ) -> PipelineResult:
@@ -163,6 +166,8 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         init_weight: Scale of the random initial deltas (default 1e-3).
         power: Exponent p of the error norm (default 2).
         alpha: Laplacian smoothness weight (default from the model name).
+        seed: Torch random seed for the initial deltas and weights
+            (default 12345).
         use_joint_matrices: Use the rest matrices exported for ``joints`` so P
             and the joint placement follow them (default True).
         name: Prefix for every node the rig builder creates.
@@ -186,6 +191,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         init_weight=init_weight,
         power=power,
         alpha=alpha,
+        seed=seed,
         use_joint_matrices=use_joint_matrices,
     )
     source = resolve_source_mesh(cmds, mesh)
@@ -412,6 +418,7 @@ def compression_command(
         "--init-weight": settings.init_weight,
         "--power": settings.power,
         "--alpha": settings.alpha,
+        "--seed": settings.seed,
     }
     for flag, value in options.items():
         if value is not None:

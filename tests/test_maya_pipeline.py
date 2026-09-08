@@ -80,6 +80,7 @@ class TestCompressionCommand:
             init_weight=1e-2,
             power=12,
             alpha=20.0,
+            seed=5,
             use_joint_matrices=False,
         )
 
@@ -109,6 +110,8 @@ class TestCompressionCommand:
             "12",
             "--alpha",
             "20.0",
+            "--seed",
+            "5",
             "--ignore-joint-matrices",
         ]
 

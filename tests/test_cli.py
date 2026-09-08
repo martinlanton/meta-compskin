@@ -78,3 +78,25 @@ def test_cli_forwards_the_influence_limit(grid_model_npz, tmp_path):
 
     weights = np.load(output)["weights"]
     assert ((weights != 0).sum(axis=1) <= 3).all()
+
+
+def test_cli_forwards_the_seed(grid_model_npz, tmp_path):
+    def compress(name, seed):
+        output = tmp_path / f"{name}.npz"
+        main(
+            [
+                str(grid_model_npz),
+                str(output),
+                *_FAST,
+                "--number-of-bones",
+                "10",
+                "--seed",
+                str(seed),
+            ]
+        )
+        return np.load(output)["weights"]
+
+    first, second, third = compress("a", 3), compress("b", 3), compress("c", 4)
+
+    np.testing.assert_array_equal(first, second)
+    assert not np.array_equal(first, third)

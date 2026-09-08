@@ -28,7 +28,8 @@ python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations
 ```
 
 Every constructor setting below has a matching option (`--number-of-bones`,
-`--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`). Joint matrices stored
+`--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
+`--seed`). Joint matrices stored
 in the model file by the exporter are used unless you pass
 `--ignore-joint-matrices`. This is the command the Maya pipeline runs in a
 subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
@@ -47,6 +48,7 @@ Constructor arguments:
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
+| `seed` | 12345 | Torch seed for the random initial deltas and weights. Change it to explore other local minima. |
 
 Attributes you can change after construction and before `run`:
 
@@ -149,11 +151,25 @@ Python.
 
 ## Reproducibility
 
-The random seed is fixed (12345) in the constructor. The same code, data,
-torch version and hardware class give identical output; the regression tests
-depend on this. Across CPU and GPU, or across torch releases, results differ in
-the low decimals and occasionally in which joints own a border region. Both
-are equally valid solutions.
+The random seed is the `seed` argument, 12345 by default. The same code,
+data, seed, torch version and hardware class give identical output; the
+regression tests depend on this. Across CPU and GPU, or across torch
+releases, results differ in the low decimals and occasionally in which
+joints own a border region. Both are equally valid solutions.
+
+The optimisation is non-convex, so different seeds converge to different
+local minima of similar quality — not just numerical jitter. Running a few
+seeds and keeping the one with the lowest `maxDelta` is a cheap way to
+improve a fit at no runtime cost:
+
+```python
+best = None
+for seed in (1, 2, 3, 4, 5):
+    compressor = SkinCompressor(model_data=model_data, seed=seed)
+    compressor.run(f"exports/head_seed{seed}.npz")
+    if best is None or compressor.reconstruction_error.max_abs < best:
+        best = compressor.reconstruction_error.max_abs
+```
 
 ## Batch processing
 
@@ -173,3 +189,5 @@ for npz in sorted(Path("exports").glob("*_head.npz")):
 
 Read the last two lines, `maxDelta` and `meanDelta`, then go to
 [Evaluating results](evaluating_results.md) before shipping anything.
+`compressor.reconstruction_error` holds the same two numbers as `max_abs`
+and `mean_abs`, so a script can read them without parsing stdout.

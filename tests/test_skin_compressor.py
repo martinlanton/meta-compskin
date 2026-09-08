@@ -19,6 +19,13 @@ class TestSkinCompressorSettings:
         assert compressor.total_nnz_B_rt == 6000
         assert compressor.init_weight == 1e-3
         assert compressor.power == 2
+        assert compressor.seed == 12345
+        assert compressor.reconstruction_error is None
+
+    def test_seed_is_taken_from_the_constructor(self, grid_model_data):
+        compressor = SkinCompressor(model_data=grid_model_data, seed=7)
+
+        assert compressor.seed == 7
 
     def test_settings_are_taken_from_the_constructor(self, grid_model_data):
         compressor = SkinCompressor(
@@ -97,3 +104,46 @@ class TestSkinCompressorSettings:
 
         weights = np.load(output)["weights"]
         assert ((weights != 0).sum(axis=1) <= 3).all()
+
+    def test_same_seed_reproduces_the_output(self, grid_model_data, tmp_path):
+        settings = {
+            "iterations": 300,
+            "number_of_bones": 10,
+            "total_nnz_B_rt": 100,
+            "seed": 3,
+        }
+
+        SkinCompressor(model_data=grid_model_data, **settings).run(tmp_path / "a.npz")
+        SkinCompressor(model_data=grid_model_data, **settings).run(tmp_path / "b.npz")
+
+        first, second = np.load(tmp_path / "a.npz"), np.load(tmp_path / "b.npz")
+        np.testing.assert_array_equal(first["weights"], second["weights"])
+        np.testing.assert_array_equal(first["shapeXform"], second["shapeXform"])
+
+    def test_different_seeds_change_the_output(self, grid_model_data, tmp_path):
+        settings = {"iterations": 300, "number_of_bones": 10, "total_nnz_B_rt": 100}
+
+        SkinCompressor(model_data=grid_model_data, seed=3, **settings).run(
+            tmp_path / "a.npz"
+        )
+        SkinCompressor(model_data=grid_model_data, seed=4, **settings).run(
+            tmp_path / "b.npz"
+        )
+
+        first, second = np.load(tmp_path / "a.npz"), np.load(tmp_path / "b.npz")
+        assert not np.array_equal(first["weights"], second["weights"])
+
+    def test_run_records_the_reconstruction_error(self, grid_model_data, tmp_path):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=300,
+            number_of_bones=10,
+            total_nnz_B_rt=100,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+
+        error = compressor.reconstruction_error
+        assert error is not None
+        assert np.isfinite(error.max_abs) and np.isfinite(error.mean_abs)
+        assert error.max_abs >= error.mean_abs > 0
