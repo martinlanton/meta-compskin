@@ -27,7 +27,8 @@ From a shell, the same run is:
 python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations 10000
 ```
 
-Every constructor setting below has a matching option (`--number-of-bones`,
+Every constructor setting below has a matching option (`--iterations` also
+takes a comma-separated list, `--number-of-bones`,
 `--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
 `--seed`). Joint matrices stored
 in the model file by the exporter are used unless you pass
@@ -41,7 +42,7 @@ Constructor arguments:
 | Argument | Default | Meaning |
 |----------|---------|---------|
 | `model_data` | required | The input model. |
-| `iterations` | 10 000 | Steps **per phase**; two phases run, so 20 000 steps in total. |
+| `iterations` | 10 000 | Steps per stage. An int is one stage (the classic two-phase run). A sequence such as `(5000, 5000, 10000)` runs one stage per entry, halving the influence budget each stage from $K \cdot 2^{N-1}$ down to $K$; the unnormalised warm-up takes the first entry's length. Needs $K \cdot 2^{N-1} < P$. Make the last stage the longest. |
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
 | `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
@@ -55,6 +56,7 @@ Attributes you can change after construction and before `run`:
 | Attribute | Default | Meaning |
 |-----------|---------|---------|
 | `alpha` | from `model_data.alpha` | Laplacian smoothness weight. |
+| `schedule` | built from `iterations`, `max_influences`, `total_nnz_B_rt` | The `TrainingPhase` objects `run` executes. Reassign for a hand-built schedule (different stage lengths, an annealed $L$, more than one warm-up). |
 
 ```python
 compressor = SkinCompressor(
@@ -95,8 +97,72 @@ less smooth weights and a much longer solve.
 **Result looks blurred or loses wrinkles.** Lower `alpha`. If it looks noisy
 or the weight map is speckled, raise it.
 
+**Results vary a lot between seeds, or worst-case error is worse than
+expected at your $K$.** Try annealing the influence budget — see
+[Annealing the influence budget](#annealing-the-influence-budget) below.
+
 **Smoke-testing a pipeline.** `iterations=600` runs in about a minute on CPU
 and produces a valid file with a few times the final error.
+
+## Annealing the influence budget
+
+`max_influences` ($K$) is fixed by the runtime (a GPU skinning shader budget),
+so it cannot be raised to give the solver more capacity. Passing `iterations`
+as a sequence instead of an int gives the solver that capacity *during
+training only*, and hands back a result at the same $K$ you shipped with.
+
+```python
+compressor = SkinCompressor(
+    model_data=model_data, iterations=(5000, 5000, 5000, 10000), max_influences=8
+)
+compressor.run("exports/head_annealed.npz")
+```
+
+Each entry is one stage: the influence budget starts at
+$K \cdot 2^{N-1}$ ($64$ here, for $N = 4$ stages) and halves every stage down
+to $K$ ($8$), so weights are free to explore more joints while the solver is
+still deciding which ones matter, and only commit to the final $K$ once that
+decision is informed. The schedule runs $N + 1$ phases (an unnormalised
+warm-up at the loosest budget, then one normalised phase per stage), so the
+example above trains for $5000 \times 2 + 5000 + 5000 + 10000 = 30\,000$
+steps. Needs $K \cdot 2^{N-1} < P$; make the last stage the longest, since it
+follows the harshest cut.
+
+For anything the sequence form cannot express — a differently sized warm-up,
+an annealed $L$, a non-geometric progression — assign `TrainingPhase` objects
+to `schedule` directly before calling `run`:
+
+```python
+from metacompskin.model_fit import TrainingPhase
+
+compressor = SkinCompressor(
+    model_data=model_data, max_influences=8, total_nnz_B_rt=50000
+)
+compressor.schedule = (
+    TrainingPhase(
+        iterations=2000,
+        max_influences=32,
+        total_nnz_B_rt=150000,
+        normalize_weights=False,
+    ),
+    TrainingPhase(
+        iterations=8000,
+        max_influences=32,
+        total_nnz_B_rt=150000,
+        normalize_weights=True,
+    ),
+    TrainingPhase(
+        iterations=8000,
+        max_influences=16,
+        total_nnz_B_rt=100000,
+        normalize_weights=True,
+    ),
+    TrainingPhase(
+        iterations=20000, max_influences=8, total_nnz_B_rt=50000, normalize_weights=True
+    ),
+)
+compressor.run("exports/head_custom_schedule.npz")
+```
 
 ## Custom joints
 
