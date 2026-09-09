@@ -135,30 +135,19 @@ to `schedule` directly before calling `run`:
 ```python
 from metacompskin.model_fit import TrainingPhase
 
-compressor = SkinCompressor(
-    model_data=model_data, max_influences=8, total_nnz_B_rt=50000
-)
+compressor = SkinCompressor(model_data=model_data)  # ships K=8, L=6000
 compressor.schedule = (
     TrainingPhase(
-        iterations=2000,
-        max_influences=32,
-        total_nnz_B_rt=150000,
-        normalize_weights=False,
+        iterations=2000, max_influences=32, total_nnz_B_rt=24000, normalize_weights=False
     ),
     TrainingPhase(
-        iterations=8000,
-        max_influences=32,
-        total_nnz_B_rt=150000,
-        normalize_weights=True,
+        iterations=8000, max_influences=32, total_nnz_B_rt=24000, normalize_weights=True
     ),
     TrainingPhase(
-        iterations=8000,
-        max_influences=16,
-        total_nnz_B_rt=100000,
-        normalize_weights=True,
+        iterations=8000, max_influences=16, total_nnz_B_rt=12000, normalize_weights=True
     ),
     TrainingPhase(
-        iterations=20000, max_influences=8, total_nnz_B_rt=50000, normalize_weights=True
+        iterations=20000, max_influences=8, total_nnz_B_rt=6000, normalize_weights=True
     ),
 )
 compressor.run("exports/head_custom_schedule.npz")
