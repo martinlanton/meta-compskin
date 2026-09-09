@@ -24,7 +24,7 @@ def test_iterations_per_phase_rejects_totals_below_one_per_phase():
 
 
 def test_build_variants_gives_every_variant_the_same_total_steps():
-    variants = {v.name: v for v in build_variants(40000, 8, 50000, 151200, 3)}
+    variants = {v.name: v for v in build_variants(40000, 8, 10000, 25000, 3)}
 
     assert set(variants) == {"baseline", "baseline_control", "anneal_k", "anneal_kl"}
     assert all(
@@ -35,11 +35,13 @@ def test_build_variants_gives_every_variant_the_same_total_steps():
 
 
 def test_build_variants_stages():
-    variants = {v.name: v for v in build_variants(40000, 8, 50000, 151200, 3)}
+    variants = {v.name: v for v in build_variants(40000, 8, 10000, 25000, 3)}
 
     assert variants["anneal_k"].influence_stages == "32,16,8"
-    assert variants["anneal_k"].nnz_stages == "50000,50000,50000"
-    assert variants["anneal_kl"].nnz_stages == "151200,100000,50000"  # 4L capped at 6SP
+    assert variants["anneal_k"].nnz_stages == "10000,10000,10000"
+    assert (
+        variants["anneal_kl"].nnz_stages == "25000,20000,10000"
+    )  # 4L capped at n_coefficients
     assert variants["baseline_control"].influence_stages == "8,8,8"
 
 

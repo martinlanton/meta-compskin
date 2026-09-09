@@ -138,7 +138,10 @@ from metacompskin.model_fit import TrainingPhase
 compressor = SkinCompressor(model_data=model_data)  # ships K=8, L=6000
 compressor.schedule = (
     TrainingPhase(
-        iterations=2000, max_influences=32, total_nnz_B_rt=24000, normalize_weights=False
+        iterations=2000,
+        max_influences=32,
+        total_nnz_B_rt=24000,
+        normalize_weights=False,
     ),
     TrainingPhase(
         iterations=8000, max_influences=32, total_nnz_B_rt=24000, normalize_weights=True
@@ -252,11 +255,12 @@ MAE per variant:
 
 ```bash
 python scripts/compare_schedules.py exports/head.npz runs/compare \
-    --number-of-bones 200 --max-influences 8 --total-nnz-b-rt 50000 \
-    --alpha 7 --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
+    --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
 ```
 
-Read the table by comparing the annealed variants' mean against the
+Pass the same `--number-of-bones`, `--max-influences`, `--total-nnz-b-rt`
+and `--alpha` you normally compress that model with, so every variant is
+compared at the budgets you actually ship. Read the table by comparing the annealed variants' mean against the
 baseline's own std: an improvement smaller than that std is not
 distinguishable from seed luck. `results.csv` under the output directory has
 one row per run for further analysis; `--dry-run` prints the planned runs

@@ -11,8 +11,11 @@ model; see plan/research.md Section 8 for how to read the result.
 Usage::
 
     python scripts/compare_schedules.py MODEL.npz OUT_DIR \\
-        --number-of-bones 200 --max-influences 8 --total-nnz-b-rt 50000 \\
-        --alpha 7 --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
+        --number-of-bones P --max-influences K --total-nnz-b-rt L --alpha A \\
+        --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
+
+where P, K, L and A are the budgets and alpha the model is normally
+compressed with, so every variant is compared at the shipped settings.
 
 Fairness: every variant runs for exactly `--total-iterations` steps in
 total, split evenly across its phases (see `iterations_per_phase`), so a
