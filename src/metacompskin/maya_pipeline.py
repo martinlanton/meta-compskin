@@ -82,24 +82,28 @@ class CompressionSettings:
     (see :class:`SkinCompressor`).
 
     Attributes:
-        iterations: Optimisation iterations per phase.
+        iterations: Optimisation iterations per phase (an int), or steps per
+            stage of an annealed influence budget (a tuple; see
+            :func:`metacompskin.model_fit.build_training_schedule`).
         number_of_bones: Number of virtual bones P.
         max_influences: Maximum non-zero weights per vertex K.
         total_nnz_B_rt: Sparsity budget L.
         init_weight: Scale of the random initial deltas.
         power: Exponent p of the error norm.
         alpha: Laplacian smoothness weight.
+        seed: Torch random seed for the initial deltas and weights.
         use_joint_matrices: Use the ``rest_joint_matrices`` the exporter wrote
             (when ``joints`` were given), so P and the joint placement follow them.
     """
 
-    iterations: int = 10000
+    iterations: int | tuple[int, ...] = 10000
     number_of_bones: int | None = None
     max_influences: int | None = None
     total_nnz_B_rt: int | None = None  # noqa: N815 (matches SkinCompressor)
     init_weight: float | None = None
     power: int | None = None
     alpha: float | None = None
+    seed: int | None = None
     use_joint_matrices: bool = True
 
 
@@ -125,13 +129,14 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     output_dir: str | Path | None = None,
     mesh: str | None = None,
     joints: list[str] | None = None,
-    iterations: int = 10000,
+    iterations: int | tuple[int, ...] = 10000,
     number_of_bones: int | None = None,
     max_influences: int | None = None,
     total_nnz_B_rt: int | None = None,
     init_weight: float | None = None,
     power: int | None = None,
     alpha: float | None = None,
+    seed: int | None = None,
     use_joint_matrices: bool = True,
     name: str = "compskin",
 ) -> PipelineResult:
@@ -156,13 +161,17 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
             the scene when nothing is selected.
         joints: Optional joint names whose rest matrices are exported and used
             for the compression (see :class:`MayaBlendshapeExporter`).
-        iterations: Optimisation iterations per phase (default 10000).
+        iterations: Optimisation iterations per phase (default 10000, an int),
+            or steps per stage of an annealed influence budget (a tuple; see
+            :func:`metacompskin.model_fit.build_training_schedule`).
         number_of_bones: Number of virtual bones P (default 100).
         max_influences: Maximum non-zero weights per vertex K (default 8).
         total_nnz_B_rt: Sparsity budget L (default 6000).
         init_weight: Scale of the random initial deltas (default 1e-3).
         power: Exponent p of the error norm (default 2).
         alpha: Laplacian smoothness weight (default from the model name).
+        seed: Torch random seed for the initial deltas and weights
+            (default 12345).
         use_joint_matrices: Use the rest matrices exported for ``joints`` so P
             and the joint placement follow them (default True).
         name: Prefix for every node the rig builder creates.
@@ -186,6 +195,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         init_weight=init_weight,
         power=power,
         alpha=alpha,
+        seed=seed,
         use_joint_matrices=use_joint_matrices,
     )
     source = resolve_source_mesh(cmds, mesh)
@@ -382,6 +392,20 @@ def default_output_dir(scene_path: str) -> Path:
     return Path(tempfile.mkdtemp(prefix="compskin_"))
 
 
+def _format_ints(value: int | tuple[int, ...]) -> str:
+    """Formats an ``--iterations``-style value for the CLI.
+
+    Args:
+        value: A single step count, or one step count per stage.
+
+    Returns:
+        ``str(value)`` for an int, comma-joined for a tuple.
+    """
+    if isinstance(value, int):
+        return str(value)
+    return ",".join(str(item) for item in value)
+
+
 def compression_command(
     python: Path, model_path: Path, compressed_path: Path, settings: CompressionSettings
 ) -> list[str]:
@@ -403,7 +427,7 @@ def compression_command(
         str(model_path),
         str(compressed_path),
         "--iterations",
-        str(settings.iterations),
+        _format_ints(settings.iterations),
     ]
     options = {
         "--number-of-bones": settings.number_of_bones,
@@ -412,6 +436,7 @@ def compression_command(
         "--init-weight": settings.init_weight,
         "--power": settings.power,
         "--alpha": settings.alpha,
+        "--seed": settings.seed,
     }
     for flag, value in options.items():
         if value is not None:

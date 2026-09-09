@@ -27,8 +27,10 @@ From a shell, the same run is:
 python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations 10000
 ```
 
-Every constructor setting below has a matching option (`--number-of-bones`,
-`--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`). Joint matrices stored
+Every constructor setting below has a matching option (`--iterations` also
+takes a comma-separated list, `--number-of-bones`,
+`--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
+`--seed`). Joint matrices stored
 in the model file by the exporter are used unless you pass
 `--ignore-joint-matrices`. This is the command the Maya pipeline runs in a
 subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
@@ -40,19 +42,21 @@ Constructor arguments:
 | Argument | Default | Meaning |
 |----------|---------|---------|
 | `model_data` | required | The input model. |
-| `iterations` | 10 000 | Steps **per phase**; two phases run, so 20 000 steps in total. |
+| `iterations` | 10 000 | Steps per stage. An int is one stage (the classic two-phase run). A sequence such as `(5000, 5000, 10000)` runs one stage per entry, halving the influence budget each stage from $K \cdot 2^{N-1}$ down to $K$; the unnormalised warm-up takes the first entry's length. Needs $K \cdot 2^{N-1} < P$. Make the last stage the longest. |
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
 | `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
+| `seed` | 12345 | Torch seed for the random initial deltas and weights. Change it to explore other local minima. |
 
 Attributes you can change after construction and before `run`:
 
 | Attribute | Default | Meaning |
 |-----------|---------|---------|
 | `alpha` | from `model_data.alpha` | Laplacian smoothness weight. |
+| `schedule` | built from `iterations`, `max_influences`, `total_nnz_B_rt` | The `TrainingPhase` objects `run` executes. Reassign for a hand-built schedule (different stage lengths, an annealed $L$, more than one warm-up). |
 
 ```python
 compressor = SkinCompressor(
@@ -93,8 +97,64 @@ less smooth weights and a much longer solve.
 **Result looks blurred or loses wrinkles.** Lower `alpha`. If it looks noisy
 or the weight map is speckled, raise it.
 
+**Results vary a lot between seeds, or worst-case error is worse than
+expected at your $K$.** Try annealing the influence budget — see
+[Annealing the influence budget](#annealing-the-influence-budget) below.
+
 **Smoke-testing a pipeline.** `iterations=600` runs in about a minute on CPU
 and produces a valid file with a few times the final error.
+
+## Annealing the influence budget
+
+`max_influences` ($K$) is fixed by the runtime (a GPU skinning shader budget),
+so it cannot be raised to give the solver more capacity. Passing `iterations`
+as a sequence instead of an int gives the solver that capacity *during
+training only*, and hands back a result at the same $K$ you shipped with.
+
+```python
+compressor = SkinCompressor(
+    model_data=model_data, iterations=(5000, 5000, 5000, 10000), max_influences=8
+)
+compressor.run("exports/head_annealed.npz")
+```
+
+Each entry is one stage: the influence budget starts at
+$K \cdot 2^{N-1}$ ($64$ here, for $N = 4$ stages) and halves every stage down
+to $K$ ($8$), so weights are free to explore more joints while the solver is
+still deciding which ones matter, and only commit to the final $K$ once that
+decision is informed. The schedule runs $N + 1$ phases (an unnormalised
+warm-up at the loosest budget, then one normalised phase per stage), so the
+example above trains for $5000 \times 2 + 5000 + 5000 + 10000 = 30\,000$
+steps. Needs $K \cdot 2^{N-1} < P$; make the last stage the longest, since it
+follows the harshest cut.
+
+For anything the sequence form cannot express — a differently sized warm-up,
+an annealed $L$, a non-geometric progression — assign `TrainingPhase` objects
+to `schedule` directly before calling `run`:
+
+```python
+from metacompskin.model_fit import TrainingPhase
+
+compressor = SkinCompressor(model_data=model_data)  # ships K=8, L=6000
+compressor.schedule = (
+    TrainingPhase(
+        iterations=2000,
+        max_influences=32,
+        total_nnz_B_rt=24000,
+        normalize_weights=False,
+    ),
+    TrainingPhase(
+        iterations=8000, max_influences=32, total_nnz_B_rt=24000, normalize_weights=True
+    ),
+    TrainingPhase(
+        iterations=8000, max_influences=16, total_nnz_B_rt=12000, normalize_weights=True
+    ),
+    TrainingPhase(
+        iterations=20000, max_influences=8, total_nnz_B_rt=6000, normalize_weights=True
+    ),
+)
+compressor.run("exports/head_custom_schedule.npz")
+```
 
 ## Custom joints
 
@@ -149,11 +209,25 @@ Python.
 
 ## Reproducibility
 
-The random seed is fixed (12345) in the constructor. The same code, data,
-torch version and hardware class give identical output; the regression tests
-depend on this. Across CPU and GPU, or across torch releases, results differ in
-the low decimals and occasionally in which joints own a border region. Both
-are equally valid solutions.
+The random seed is the `seed` argument, 12345 by default. The same code,
+data, seed, torch version and hardware class give identical output; the
+regression tests depend on this. Across CPU and GPU, or across torch
+releases, results differ in the low decimals and occasionally in which
+joints own a border region. Both are equally valid solutions.
+
+The optimisation is non-convex, so different seeds converge to different
+local minima of similar quality — not just numerical jitter. Running a few
+seeds and keeping the one with the lowest `maxDelta` is a cheap way to
+improve a fit at no runtime cost:
+
+```python
+best = None
+for seed in (1, 2, 3, 4, 5):
+    compressor = SkinCompressor(model_data=model_data, seed=seed)
+    compressor.run(f"exports/head_seed{seed}.npz")
+    if best is None or compressor.reconstruction_error.max_abs < best:
+        best = compressor.reconstruction_error.max_abs
+```
 
 ## Batch processing
 
@@ -169,7 +243,32 @@ for npz in sorted(Path("exports").glob("*_head.npz")):
     )
 ```
 
+### Comparing schedules and seeds
+
+`scripts/compare_schedules.py` automates the batch job that answers "is an
+annealed schedule actually better than the plain baseline, or within seed
+noise?" (see [Annealing the influence budget](#annealing-the-influence-budget)
+and [Reproducibility](#reproducibility) above). It runs the baseline, a
+phase-count control, and two annealed variants over several seeds, all at
+the same total step count, and prints mean/std/min/max of the final MXE and
+MAE per variant:
+
+```bash
+python scripts/compare_schedules.py exports/head.npz runs/compare \
+    --seeds 1,2,3,4,5 --total-iterations 40000 --anneal-stages 3
+```
+
+Pass the same `--number-of-bones`, `--max-influences`, `--total-nnz-b-rt`
+and `--alpha` you normally compress that model with, so every variant is
+compared at the budgets you actually ship. Read the table by comparing the annealed variants' mean against the
+baseline's own std: an improvement smaller than that std is not
+distinguishable from seed luck. `results.csv` under the output directory has
+one row per run for further analysis; `--dry-run` prints the planned runs
+without compressing anything.
+
 ## After the run
 
 Read the last two lines, `maxDelta` and `meanDelta`, then go to
 [Evaluating results](evaluating_results.md) before shipping anything.
+`compressor.reconstruction_error` holds the same two numbers as `max_abs`
+and `mean_abs`, so a script can read them without parsing stdout.

@@ -71,9 +71,16 @@ coefficients means at most 1000 non-zero (shape, joint) blocks, out of
 $S \times P$ (about 10 000 for the sample heads). That is the "about 90%
 zeros" figure.
 
-## Two phases
+## Training phases
 
-`run` calls `train` twice with the same tensors:
+`run` executes `self.schedule`, a sequence of `TrainingPhase` objects (one
+`train` call each, with a fresh Adam optimiser). It is built from
+`iterations`, `max_influences` and `total_nnz_B_rt` by
+`build_training_schedule`, or can be assigned directly for a hand-built
+schedule.
+
+With the default `iterations=10000` (a single int), the schedule is the
+classic two phases:
 
 | Phase | Weight normalisation | Purpose |
 |-------|----------------------|---------|
@@ -83,6 +90,16 @@ zeros" figure.
 Each phase runs `iterations` steps, so the total is twice the number you pass.
 The paper used 20 000 total; the default `iterations=10000` matches it.
 
+Passing `iterations` as a sequence instead — say `(5000, 5000, 10000)` — adds
+one stage per entry: the influence budget $K$ starts at $K \cdot 2^{N-1}$ ($N$
+being the number of stages) and halves each stage down to $K$, so the schedule
+runs $N + 1$ phases (the unnormalised warm-up plus one normalised phase per
+stage). Section 4.1's "HD" setting used $K = 32$ during the whole solve; this
+gives the solver that room to explore which joints matter *before* committing
+to the $K$ the runtime actually gets. See
+[Compressing](../user_guide/compressing.md#annealing-the-influence-budget)
+for when this helps and how to set it.
+
 ## Initialisation and reproducibility
 
 - `B_rt` starts as small Gaussian noise (scale `init_weight`, $10^{-3}$).
@@ -90,14 +107,22 @@ The paper used 20 000 total; the default `iterations=10000` matches it.
   projection picks an essentially random $K$ joints per vertex; the optimiser
   sorts it out within the first few hundred iterations (Figure 1 of the paper
   shows this convergence).
-- The torch seed is fixed to 12345 in the constructor. Runs on the same
-  hardware and library versions are bit-for-bit repeatable; the regression
-  tests rely on this. Different GPUs, CPU versus GPU, or different torch
-  versions produce equally valid but not identical solutions.
+- The torch seed is the `seed` argument, 12345 by default. Runs with the same
+  seed on the same hardware and library versions are bit-for-bit repeatable;
+  the regression tests rely on this. Different GPUs, CPU versus GPU, or
+  different torch versions produce equally valid but not identical
+  solutions — as does a different seed, since the objective is non-convex.
 
 ## Reading the log
 
-Every 200 iterations `train` prints one line:
+`run` prints one header line before each phase:
+
+```
+phase 1/2: iterations=10000 K=8 L=6000 normalize_weights=False
+```
+
+(`phase 1/5: ... K=64 ...` for a four-stage schedule, and so on.) Then, every
+200 iterations, `train` prints one line:
 
 ```
 01200(0.987) 1.23456e-02 4.56789e-01 5820 47552
@@ -129,7 +154,7 @@ tables are in millimetres). How to interpret them is in
 
 | Setting | Default | Increasing it | Decreasing it |
 |---------|---------|---------------|---------------|
-| `iterations` | 10 000 per phase | lower error, longer solve; returns diminish past ~20 000 total | faster, rougher; 600 is enough to check a pipeline |
+| `iterations` | 10 000 per phase | lower error, longer solve; returns diminish past ~20 000 total; as a sequence, anneals the influence budget over more phases | faster, rougher; 600 is enough to check a pipeline |
 | `number_of_bones` ($P$) | 100 | more capacity, higher runtime cost per frame | cheaper runtime, error rises quickly below ~20 |
 | `max_influences` ($K$) | 8 | smoother weight maps, more shader cost | must stay ≥ 4 or so; must be smaller than $P$ |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |

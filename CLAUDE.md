@@ -71,6 +71,8 @@ Input .npz (blendshapes)
 | `K` | 8 | Max LBS influences per vertex |
 | `L` | 6000 | Non-zeros in transformation matrices |
 | `alpha` | model-specific | Laplacian regularization strength |
+| `seed` | 12345 | Torch seed for the random initialization |
+| `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases |
 
 ## Testing
 

@@ -6,7 +6,13 @@ accepts) and writes the compressed archive. This is what the Maya pipeline
 launches in a subprocess, but it works on its own too::
 
     python -m metacompskin exports/head.npz exports/head_compressed.npz \\
-        --iterations 10000 --number-of-bones 100
+        --iterations 10000 --number-of-bones 100 --seed 7
+
+``--iterations`` also takes a comma-separated list, one step count per stage,
+to anneal the influence budget (see :func:`metacompskin.model_fit.build_training_schedule`)::
+
+    python -m metacompskin exports/head.npz exports/head_compressed.npz \\
+        --iterations 5000,5000,10000
 
 If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
@@ -24,6 +30,29 @@ from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import SkinCompressor
 
 
+def _int_list(text: str) -> tuple[int, ...]:
+    """Parses ``"5000,5000,10000"`` into ``(5000, 5000, 10000)`` for argparse.
+
+    A single integer with no comma is a one-element tuple, e.g. ``"300"`` ->
+    ``(300,)``, so ``--iterations 300`` keeps working unchanged.
+
+    Args:
+        text: The raw ``--iterations`` value.
+
+    Returns:
+        One step count per stage.
+
+    Raises:
+        argparse.ArgumentTypeError: If any item is not an integer.
+    """
+    try:
+        return tuple(int(item) for item in text.split(","))
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"expected comma-separated integers, got {text!r}"
+        ) from e
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Builds the argument parser for ``python -m metacompskin``.
 
@@ -36,13 +65,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("model", help="Input model NPZ (from MayaBlendshapeExporter).")
     parser.add_argument("output", help="Compressed NPZ to write.")
-    parser.add_argument("--iterations", type=int, default=10000)
+    parser.add_argument(
+        "--iterations",
+        type=_int_list,
+        default=(10000,),
+        help="steps per stage, e.g. 5000,5000,10000 (a single number is one stage)",
+    )
     parser.add_argument("--number-of-bones", type=int, default=None, help="P")
     parser.add_argument("--max-influences", type=int, default=None, help="K")
     parser.add_argument("--total-nnz-b-rt", type=int, default=None, help="L")
     parser.add_argument("--init-weight", type=float, default=None)
     parser.add_argument("--power", type=int, default=None, help="p")
     parser.add_argument("--alpha", type=float, default=None)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
         "--ignore-joint-matrices",
         action="store_true",
@@ -100,6 +135,7 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "total_nnz_b_rt",
         "init_weight",
         "power",
+        "seed",
     ):
         value = getattr(args, option)
         if value is not None:

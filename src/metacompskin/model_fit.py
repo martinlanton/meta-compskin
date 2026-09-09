@@ -10,6 +10,8 @@ Handles loading model data, running optimization, and saving results.
 # the root directory of this source tree.
 
 import time
+from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
 
@@ -32,6 +34,7 @@ _REST_JOINT_MATRICES_NDIM = (
 _JOINT_MATRIX_SHAPE = (4, 4)  # Expected shape of each rest joint matrix
 _DEFAULT_NUMBER_OF_BONES = 100  # P
 _DEFAULT_MAX_INFLUENCES = 8  # K
+_DEFAULT_SEED = 12345
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -61,6 +64,130 @@ def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_ma
     return adj
 
 
+@dataclass(frozen=True)
+class TrainingPhase:
+    """One stage of the optimisation with fixed sparsity budgets.
+
+    Attributes:
+        iterations: Adam steps in this phase.
+        max_influences: K, weights kept per vertex by the projection.
+        total_nnz_B_rt: L, delta coefficients kept globally by the projection.
+        normalize_weights: Whether the forward pass divides each vertex's
+            weights by their sum (partition of unity).
+
+    Raises:
+        ValueError: If any count is below one.
+
+    References:
+        Section 4 of the paper, projections (1)-(3); plan/spec.md Section 7.
+    """
+
+    iterations: int
+    max_influences: int
+    total_nnz_B_rt: int  # noqa: N815 (matches SkinCompressor)
+    normalize_weights: bool
+
+    def __post_init__(self) -> None:
+        """Validates the counts after dataclass assignment.
+
+        Raises:
+            ValueError: If any count is below one.
+        """
+        for name in ("iterations", "max_influences", "total_nnz_B_rt"):
+            if getattr(self, name) < 1:
+                raise ValueError(
+                    f"{name} must be at least 1, got {getattr(self, name)}"
+                )
+
+
+@dataclass(frozen=True)
+class ReconstructionError:
+    """Final fit error of a compression run, in model units.
+
+    Attributes:
+        max_abs: Largest per-axis absolute error over all vertices and shapes (MXE).
+        mean_abs: Mean per-axis absolute error (MAE).
+
+    References:
+        Paper Table 1 ("MXE", "MAE"); docs/user_guide/evaluating_results.md.
+    """
+
+    max_abs: float
+    mean_abs: float
+
+
+def build_training_schedule(
+    stage_iterations: Sequence[int],
+    max_influences: int,
+    total_nnz_B_rt: int,  # noqa: N803 (matches SkinCompressor)
+) -> tuple[TrainingPhase, ...]:
+    """Builds the phases run() executes, one stage per entry of stage_iterations.
+
+    Stage i runs ``stage_iterations[i]`` steps and keeps
+    ``max_influences * 2 ** (N - 1 - i)`` weights per vertex, N being the
+    number of stages, so the budget halves each stage down to
+    ``max_influences``. The delta budget is constant. The first stage is
+    preceded by a warm-up of the same length with weight normalisation off;
+    every stage itself runs normalised. One entry is the classic two-phase
+    schedule.
+
+    Args:
+        stage_iterations: Steps per stage; non-empty.
+        max_influences: K reached in the final stage.
+        total_nnz_B_rt: L used in every phase.
+
+    Returns:
+        ``len(stage_iterations) + 1`` phases.
+
+    Raises:
+        ValueError: If ``stage_iterations`` is empty or an entry is below one.
+
+    References:
+        Zhu & Gupta 2017 (gradual magnitude pruning); plan/research.md
+        Sections 4-5.
+    """
+    if not stage_iterations:
+        raise ValueError("iterations must contain at least one stage")
+    n_stages = len(stage_iterations)
+    stages = [
+        TrainingPhase(
+            steps,
+            max_influences * 2 ** (n_stages - 1 - i),
+            total_nnz_B_rt,
+            normalize_weights=True,
+        )
+        for i, steps in enumerate(stage_iterations)
+    ]
+    warm_up = TrainingPhase(
+        stages[0].iterations,
+        stages[0].max_influences,
+        total_nnz_B_rt,
+        normalize_weights=False,
+    )
+    return (warm_up, *stages)
+
+
+def _as_stage_iterations(iterations: int | Sequence[int]) -> tuple[int, ...]:
+    """Normalises the ``iterations`` constructor argument to a tuple of stages.
+
+    Args:
+        iterations: A single step count (one stage), or one step count per
+            stage.
+
+    Returns:
+        ``(iterations,)`` for an int, ``tuple(iterations)`` for a sequence.
+
+    Raises:
+        ValueError: If a sequence is given and it is empty.
+    """
+    if isinstance(iterations, int):
+        return (iterations,)
+    stages = tuple(iterations)
+    if not stages:
+        raise ValueError("iterations must contain at least one stage")
+    return stages
+
+
 class SkinCompressor:
     """Optimizer for sparse skinning decomposition of facial blendshapes.
 
@@ -88,7 +215,13 @@ class SkinCompressor:
 
     Attributes:
         model_data: BlendshapeModelData with geometry and rig info.
-        iterations: Number of optimization iterations (default 10000).
+        iterations: Value given to the constructor (int or a sequence),
+            kept as given; use stage_iterations or schedule instead.
+        stage_iterations: iterations normalised to a tuple, one entry per
+            stage.
+        schedule: The TrainingPhase objects run() executes, built from
+            stage_iterations, max_influences and total_nnz_B_rt. May be
+            reassigned before run() for a hand-built schedule.
         rest_joint_matrices_3x4: Optional 3×4 affine matrices for joint rest poses.
             Extracted from the 4×4 matrices provided during initialization.
             If None, identity matrices are used (default behavior).
@@ -104,12 +237,16 @@ class SkinCompressor:
             Small value starts optimization near zero.
         power: Lp norm exponent for loss function (default 2).
             p=2 gives L2 norm, p=12 for HD fit (Section 4.1).
-        seed: Random seed for reproducibility (12345).
+        seed: Torch random seed for the initial deltas and weights (default
+            12345). Set explicitly to compare local minima the optimizer
+            converges to (Section 3, non-convexity).
         alpha: Laplacian regularization strength from model_data.
             Controls smoothness: lower for high-density, higher for low-density.
         device: PyTorch device ('cuda' or 'cpu').
         loss_list: Training loss history.
         abserr_list: Training absolute error history.
+        reconstruction_error: Final MXE/MAE as a ReconstructionError, set by
+            run(). None until run() has completed.
 
     Example:
         >>> from metacompskin.model_data import BlendshapeModelData
@@ -135,19 +272,25 @@ class SkinCompressor:
     def __init__(  # noqa: PLR0913, PLR0917
         self,
         model_data: BlendshapeModelData,
-        iterations: int = 10000,
+        iterations: int | Sequence[int] = 10000,
         rest_joint_matrices: np.ndarray | list | None = None,
         number_of_bones: int | None = None,
         max_influences: int = _DEFAULT_MAX_INFLUENCES,
         total_nnz_B_rt: int = 6000,
         init_weight: float = 1e-3,
         power: int = 2,
+        seed: int = _DEFAULT_SEED,
     ):
         """Initializes the SkinCompressor.
 
         Args:
             model_data: BlendshapeModelData instance containing model geometry and rig info.
-            iterations: Number of optimization iterations.
+            iterations: Steps for a single stage (int, the classic two-phase
+                run), or steps per stage (a sequence). A sequence anneals the
+                influence budget: it halves each stage from
+                max_influences * 2**(N-1) down to max_influences, N being the
+                number of stages; the unnormalised warm-up takes the first
+                entry's length. See build_training_schedule.
             rest_joint_matrices: Optional array of 4×4 transformation matrices for joint rest poses.
                 If provided, must be shape (P, 4, 4) where P is the number of bones.
                 Each matrix should be a standard 4×4 homogeneous transformation matrix.
@@ -165,10 +308,13 @@ class SkinCompressor:
             init_weight: Scale of the random initial values of B_rt (default 1e-3).
             power: Exponent p of the error norm in the loss (default 2; 12 for a
                 worst-case fit, Section 4.1).
+            seed: Torch random seed for the initial deltas and weights
+                (default 12345).
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
-                number_of_bones disagrees with the number of matrices given.
+                number_of_bones disagrees with the number of matrices given;
+                if iterations is an empty sequence or any entry is below one.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -182,6 +328,18 @@ class SkinCompressor:
             >>> joint_matrices = np.array([np.eye(4) for _ in range(28)])
             >>> compressor = SkinCompressor(
             ...     model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
+            ... )
+            >>> compressor.run()
+            >>>
+            >>> # Anneal the influence budget over three stages
+            >>> compressor = SkinCompressor(
+            ...     model_data=model_data, iterations=(5000, 5000, 10000)
+            ... )
+            >>>
+            >>> # A hand-built schedule (e.g. a longer final stage) overrides it
+            >>> compressor.schedule = (
+            ...     TrainingPhase(2000, 32, 6000, normalize_weights=False),
+            ...     TrainingPhase(8000, 8, 6000, normalize_weights=True),
             ... )
             >>> compressor.run()
         """
@@ -225,7 +383,12 @@ class SkinCompressor:
         self.init_weight = init_weight
         self.power = power
 
-        self.seed = 12345
+        self.stage_iterations = _as_stage_iterations(iterations)
+        self.schedule: Sequence[TrainingPhase] = build_training_schedule(
+            self.stage_iterations, max_influences, total_nnz_B_rt
+        )
+
+        self.seed = seed
         torch.manual_seed(self.seed)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -241,6 +404,7 @@ class SkinCompressor:
 
         self.loss_list: list[float] = []
         self.abserr_list: list[float] = []
+        self.reconstruction_error: ReconstructionError | None = None
 
         self.L: torch.Tensor | None = None
         self.rest_pose: torch.Tensor | None = None
@@ -254,28 +418,27 @@ class SkinCompressor:
         error metrics, and saves the compressed skinning data to an NPZ file.
 
         Optimization Workflow:
+            0. Check self.schedule fits this model (K < P, L <= 6*S*P)
             1. Construct target matrix A from blendshape deltas
             2. Build Laplacian regularization matrix
             3. Build transformation basis TR (6-DOF)
             4. Initialize B_rt (transformation parameters) with small random values
             5. Initialize W (skinning weights) with small random values
             6. Prepare rest pose with homogeneous coordinates
-            7. Phase 1: Train without weight normalization
-            8. Phase 2: Train with weight normalization
-            9. Compute final normalized weights
-            10. Evaluate and report error metrics
-            11. Save compressed results to NPZ file
+            7. Run every phase of self.schedule in order
+            8. Compute final normalized weights
+            9. Evaluate and report error metrics
+            10. Save compressed results to NPZ file
 
-        Two-Phase Training Strategy:
-            Phase 1 (normalizeW=False):
-                - Allows weights to grow freely during initial optimization
-                - Helps discover good sparse structure
-                - Focuses on reducing reconstruction error
-
-            Phase 2 (normalizeW=True):
-                - Enforces partition of unity constraint (Σⱼ wᵢ,ⱼ = 1)
-                - Produces final skinning weights satisfying LBS requirements
-                - Refines solution from phase 1
+        Training Schedule:
+            self.schedule is a sequence of TrainingPhase objects, built by
+            build_training_schedule from stage_iterations, max_influences and
+            total_nnz_B_rt (or assigned directly before calling run for a
+            hand-built schedule). Its first phase is always unnormalised
+            (weights grow freely, helping discover good sparse structure);
+            every later phase enforces partition of unity
+            (Σⱼ wᵢ,ⱼ = 1). With the default settings this is the classic
+            two-phase run.
 
         Output NPZ File Contents:
             rest: Rest pose vertices, shape (N, 3)
@@ -295,9 +458,15 @@ class SkinCompressor:
             output_location: Path where compressed NPZ file will be saved.
                 Can be string or Path object. Parent directory must already exist.
 
+        Raises:
+            ValueError: If self.schedule is empty, or a phase keeps
+                max_influences >= number_of_bones weights per vertex, or more
+                than 6*S*P delta coefficients.
+
         Side Effects:
             - Prints model information and training progress
             - Updates self.loss_list and self.abserr_list
+            - Sets self.reconstruction_error to the final MXE/MAE
             - Creates output file at output_location
             - Reports final error metrics (MAE, MXE)
 
@@ -322,6 +491,8 @@ class SkinCompressor:
             - Section 4: Complete optimization algorithm
             - Table 1: Expected error metrics for validation
         """
+        self._check_schedule_fits_model()
+
         A = self.get_matrix_for_optimization()
         N = A.shape[1]  # number of vertices
 
@@ -361,8 +532,13 @@ class SkinCompressor:
             .requires_grad_()
         )
 
-        self.train(B_rt=B_rt, TR=TR, A=A, W=W, normalizeW=False)
-        self.train(B_rt=B_rt, TR=TR, A=A, W=W, normalizeW=True)
+        for index, phase in enumerate(self.schedule, start=1):
+            print(
+                f"phase {index}/{len(self.schedule)}: iterations={phase.iterations} "
+                f"K={phase.max_influences} L={phase.total_nnz_B_rt} "
+                f"normalize_weights={phase.normalize_weights}"
+            )
+            self.train(B_rt=B_rt, TR=TR, A=A, W=W, phase=phase)
 
         Wn = W / W.sum(dim=0)
         print(Wn.min().item(), Wn.max().item())
@@ -380,6 +556,9 @@ class SkinCompressor:
         meanDelta = np.abs(orig_deltas - our_deltas).mean()
         print(f"maxDelta {maxDelta}")
         print(f"meanDelta {meanDelta}")
+        self.reconstruction_error = ReconstructionError(
+            max_abs=float(maxDelta), mean_abs=float(meanDelta)
+        )
 
         shapeXforms = B.detach().cpu().numpy()
 
@@ -397,6 +576,29 @@ class SkinCompressor:
             restXform=rest_xform,
             shapeXform=shapeXforms,
         )
+
+    def _check_schedule_fits_model(self) -> None:
+        """Rejects a schedule the projections cannot apply to this model.
+
+        Raises:
+            ValueError: If self.schedule is empty, or a phase keeps
+                max_influences >= number_of_bones weights per vertex, or more
+                than 6*S*P delta coefficients.
+        """
+        if not self.schedule:
+            raise ValueError("schedule must contain at least one TrainingPhase")
+        n_coefficients = 6 * self.model_data.n_blendshapes * self.number_of_bones
+        for index, phase in enumerate(self.schedule, start=1):
+            if phase.max_influences >= self.number_of_bones:
+                raise ValueError(
+                    f"phase {index}: max_influences={phase.max_influences} must be "
+                    f"smaller than number_of_bones={self.number_of_bones}"
+                )
+            if phase.total_nnz_B_rt > n_coefficients:
+                raise ValueError(
+                    f"phase {index}: total_nnz_B_rt={phase.total_nnz_B_rt} exceeds "
+                    f"6*S*P={n_coefficients}"
+                )
 
     def get_matrix_for_optimization(self) -> torch.Tensor:
         """Constructs target matrix A ∈ ℝ^(3S×N) from blendshape deltas (Equation 3).
@@ -516,7 +718,7 @@ class SkinCompressor:
         TR: torch.Tensor,
         A: torch.Tensor,
         W: torch.Tensor,
-        normalizeW: bool = False,
+        phase: TrainingPhase,
     ) -> None:
         """Trains skinning parameters using proximal Adam optimization (Section 4).
 
@@ -547,7 +749,7 @@ class SkinCompressor:
             For W (skinning weights):
                 1. Keep only K largest weights per vertex (spatial sparsity)
                 2. Clamp to non-negative values (non-negativity constraint)
-                3. If normalizeW=True, normalize to sum to 1 (partition of unity)
+                3. If phase.normalize_weights, normalize to sum to 1 (partition of unity)
 
             For B_rt (transformations):
                 1. Keep only L largest values globally by absolute value
@@ -565,19 +767,23 @@ class SkinCompressor:
                 Ground truth deltas from input model.
             W: Bone weights to optimize, shape (P, N).
                 Initialized with small random values, requires_grad=True.
-            normalizeW: Whether to enforce partition of unity during training.
-                False: Allows weights to grow freely (phase 1)
-                True: Normalizes weights to sum to 1 per vertex (phase 2)
+            phase: The TrainingPhase to run: its iterations, max_influences
+                and total_nnz_B_rt set the loop length and the two
+                projections; its normalize_weights sets whether the forward
+                pass enforces partition of unity.
 
         Note:
-            Training is typically done in two phases (see run() method):
+            run() executes self.schedule, a sequence of TrainingPhase built
+            by build_training_schedule (see that function for how a staged
+            iterations argument turns into phases). With the default
+            settings this is the classic two phases:
 
-            Phase 1 (normalizeW=False):
+            Phase 1 (normalize_weights=False):
                 - Weights can grow freely during initial optimization
                 - Helps escape local minima in early iterations
                 - Focuses on finding good sparse structure
 
-            Phase 2 (normalizeW=True):
+            Phase 2 (normalize_weights=True):
                 - Enforces partition of unity constraint
                 - Produces final skinning weights satisfying LBS requirements
                 - Refines the solution from phase 1
@@ -597,8 +803,8 @@ class SkinCompressor:
         self.optimizer = torch.optim.Adam(param_list, lr=1e-3, betas=(0.9, 0.9))
 
         st = time.time()
-        for i in range(self.iterations):
-            W_n = W / W.sum(dim=0) if normalizeW else W
+        for i in range(phase.iterations):
+            W_n = W / W.sum(dim=0) if phase.normalize_weights else W
 
             B_X, _, _ = self.compBX(
                 W_n, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
@@ -619,14 +825,14 @@ class SkinCompressor:
             self.optimizer.step()
 
             with torch.no_grad():
-                W_cutoff = torch.topk(W, self.max_influences + 1, dim=0).values[-1, :]
+                W_cutoff = torch.topk(W, phase.max_influences + 1, dim=0).values[-1, :]
                 W_mask = W_cutoff < W
                 W_pruned = W_mask * W
                 W.copy_(W_pruned)
                 W.clamp_(min=0)
 
                 B_decider = B_rt.abs()
-                B_cutoff = torch.topk(B_decider.flatten(), self.total_nnz_B_rt).values[
+                B_cutoff = torch.topk(B_decider.flatten(), phase.total_nnz_B_rt).values[
                     -1
                 ]
                 B_mask = B_decider >= B_cutoff
