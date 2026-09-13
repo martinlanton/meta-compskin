@@ -81,6 +81,7 @@ class TestCompressionCommand:
             power=12,
             alpha=20.0,
             seed=5,
+            candidate_joints_per_vertex=3,
             use_joint_matrices=False,
         )
 
@@ -112,6 +113,8 @@ class TestCompressionCommand:
             "20.0",
             "--seed",
             "5",
+            "--candidate-joints-per-vertex",
+            "3",
             "--ignore-joint-matrices",
         ]
 

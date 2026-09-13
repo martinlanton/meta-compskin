@@ -73,6 +73,7 @@ Input .npz (blendshapes)
 | `alpha` | model-specific | Laplacian regularization strength |
 | `seed` | 12345 | Torch seed for the random initialization |
 | `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases |
+| `candidate_joints_per_vertex` | `min(2K, P-1)` with joint matrices | M nearest joints (geodesic) a vertex may be weighted to; also the annealing ceiling; 0 disables |
 
 ## Testing
 

@@ -68,7 +68,10 @@ def example_with_generated_joints():
 
     joint_matrices = np.array(joint_matrices)
 
-    # Create compressor with generated joints
+    # Create compressor with generated joints. With joint matrices each joint
+    # only drives the vertices nearest to it along the mesh (its candidate
+    # set, 2*K joints per vertex by default); pass
+    # candidate_joints_per_vertex=0 to solve without that filter.
     compressor = SkinCompressor(
         model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
     )

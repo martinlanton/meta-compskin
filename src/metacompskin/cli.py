@@ -16,7 +16,10 @@ to anneal the influence budget (see :func:`metacompskin.model_fit.build_training
 
 If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
-passed. CUDA is used automatically when this interpreter's torch sees a GPU.
+passed; each joint then only drives the vertices nearest to it along the mesh,
+``--candidate-joints-per-vertex`` sets how many joints a vertex may use (0 turns
+the filter off). CUDA is used automatically when this interpreter's torch sees
+a GPU.
 """
 
 import argparse
@@ -79,6 +82,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--alpha", type=float, default=None)
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
+        "--candidate-joints-per-vertex",
+        type=int,
+        default=None,
+        help="M, nearest joints a vertex may be weighted to (needs joint "
+        "matrices; 0 turns the filter off)",
+    )
+    parser.add_argument(
         "--ignore-joint-matrices",
         action="store_true",
         help="Do not use rest_joint_matrices stored in the model file.",
@@ -136,6 +146,7 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "init_weight",
         "power",
         "seed",
+        "candidate_joints_per_vertex",
     ):
         value = getattr(args, option)
         if value is not None:

@@ -46,6 +46,7 @@ Constructor arguments:
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
 | `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
+| `candidate_joints_per_vertex` | `min(2K, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
@@ -128,6 +129,11 @@ example above trains for $5000 \times 2 + 5000 + 5000 + 10000 = 30\,000$
 steps. Needs $K \cdot 2^{N-1} < P$; make the last stage the longest, since it
 follows the harshest cut.
 
+With custom joints the ceiling is the candidate count $M$ instead of
+$K \cdot 2^{N-1}$, and the budget shrinks geometrically from $M$ to $K$: two
+stages at the defaults give $16, 8$, three give $16, 11, 8$. A single stage
+keeps $K$ throughout in both cases.
+
 For anything the sequence form cannot express — a differently sized warm-up,
 an annealed $L$, a non-geometric progression — assign `TrainingPhase` objects
 to `schedule` directly before calling `run`:
@@ -181,14 +187,33 @@ The matrices come straight from `MayaBlendshapeExporter(joints=[...])` as the
 `rest_joint_matrices` key, or from any source that produces column-vector
 $4 \times 4$ homogeneous matrices.
 
-What custom joints do and do not change:
+What custom joints change:
 
 - They set $P$. At least `max_influences + 1` are required.
 - They are echoed into `restXform` in the output, so a rig builder can place
   joints where you expect them.
-- They do **not** change the solve. The deltas are computed as if every joint
-  sat at the origin with identity orientation; joint placement in the rig is
-  handled by the bind pose. See [Maya rig workflow](maya_rig_workflow.md).
+- **Each joint drives the skin around it.** A vertex may only take weight
+  from its $M$ nearest joints, measured along the mesh surface so that an
+  upper-lip vertex is far from a lower-lip joint even though the two are
+  close in space. $M$ is `candidate_joints_per_vertex`, `min(2K, P-1)` by
+  default, so 16 at the default $K$. This is what makes the joints usable as
+  tweakers: the solved motion goes on the tweaker control's parent, and an
+  animator moving the control on top of it moves the skin under that joint
+  and nothing else. Pass `candidate_joints_per_vertex=0` to solve without the
+  filter (the pre-existing behaviour, where a joint could drive any part of
+  the face).
+
+What they do not change: the deltas are still computed as if every joint sat
+at the origin with identity orientation; joint placement in the rig is
+handled by the bind pose, and an offset added in the rig rotates the skin
+about the joint's own pivot. See [Maya rig workflow](maya_rig_workflow.md).
+
+The filter narrows the solver's search, so expect a somewhat higher error
+than the same $P$ without it; a two-stage schedule such as
+`iterations=(5000, 10000)` lets all $M$ candidates compete before the cut to
+$K$ and usually recovers part of that. After the run the log reports how many
+vertices each joint drives and lists joints driving none; an idle joint is
+too far from the mesh or redundant with a neighbour.
 
 Example script: `examples/example_custom_joints.py`.
 

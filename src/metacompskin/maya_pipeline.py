@@ -92,6 +92,8 @@ class CompressionSettings:
         power: Exponent p of the error norm.
         alpha: Laplacian smoothness weight.
         seed: Torch random seed for the initial deltas and weights.
+        candidate_joints_per_vertex: With joint matrices, the nearest joints M
+            a vertex may be weighted to (0 turns the filter off).
         use_joint_matrices: Use the ``rest_joint_matrices`` the exporter wrote
             (when ``joints`` were given), so P and the joint placement follow them.
     """
@@ -104,6 +106,7 @@ class CompressionSettings:
     power: int | None = None
     alpha: float | None = None
     seed: int | None = None
+    candidate_joints_per_vertex: int | None = None
     use_joint_matrices: bool = True
 
 
@@ -137,6 +140,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     power: int | None = None,
     alpha: float | None = None,
     seed: int | None = None,
+    candidate_joints_per_vertex: int | None = None,
     use_joint_matrices: bool = True,
     name: str = "compskin",
 ) -> PipelineResult:
@@ -172,6 +176,10 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         alpha: Laplacian smoothness weight (default from the model name).
         seed: Torch random seed for the initial deltas and weights
             (default 12345).
+        candidate_joints_per_vertex: With ``joints``, the nearest joints M
+            (along the mesh) a vertex may be weighted to, so every joint drives
+            the region around it and can double as a tweaker (default
+            ``min(2 * K, P - 1)``; 0 turns the filter off).
         use_joint_matrices: Use the rest matrices exported for ``joints`` so P
             and the joint placement follow them (default True).
         name: Prefix for every node the rig builder creates.
@@ -196,6 +204,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         power=power,
         alpha=alpha,
         seed=seed,
+        candidate_joints_per_vertex=candidate_joints_per_vertex,
         use_joint_matrices=use_joint_matrices,
     )
     source = resolve_source_mesh(cmds, mesh)
@@ -437,6 +446,7 @@ def compression_command(
         "--power": settings.power,
         "--alpha": settings.alpha,
         "--seed": settings.seed,
+        "--candidate-joints-per-vertex": settings.candidate_joints_per_vertex,
     }
     for flag, value in options.items():
         if value is not None:

@@ -18,6 +18,8 @@ from pathlib import Path
 import numpy as np
 import scipy as sp
 import torch
+from scipy.sparse.csgraph import dijkstra
+from scipy.spatial.distance import cdist
 
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.utils import add_homogeneous_coordinate, npf
@@ -50,10 +52,7 @@ def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_ma
     Returns:
         Symmetric binary CSR adjacency matrix, shape (n_verts, n_verts).
     """
-    verts_per_face = faces.shape[1]
-    pair_cols = np.array(list(combinations(range(verts_per_face), 2)))
-    i_verts = faces[:, pair_cols[:, 0]].ravel()
-    j_verts = faces[:, pair_cols[:, 1]].ravel()
+    i_verts, j_verts = _face_vertex_pairs(faces)
     rows = np.concatenate([i_verts, j_verts])
     cols = np.concatenate([j_verts, i_verts])
     adj = sp.sparse.csr_matrix(
@@ -62,6 +61,112 @@ def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_ma
     )
     adj.data[:] = 1.0  # deduplicate: shared edges appear in two faces → clip to binary
     return adj
+
+
+def _face_vertex_pairs(faces: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Lists every pair of vertices that share a face, with repeats.
+
+    Args:
+        faces: Face index array, shape (n_faces, verts_per_face).
+
+    Returns:
+        Two index arrays of equal length, one pair per entry.
+    """
+    verts_per_face = faces.shape[1]
+    pair_cols = np.array(list(combinations(range(verts_per_face), 2)))
+    return faces[:, pair_cols[:, 0]].ravel(), faces[:, pair_cols[:, 1]].ravel()
+
+
+def _edge_length_graph(
+    rest_verts: np.ndarray, rest_faces: np.ndarray
+) -> sp.sparse.csr_matrix:
+    """Builds the mesh graph weighted by Euclidean edge length.
+
+    Every pair of vertices sharing a face is an edge (quad diagonals
+    included), so the graph matches the Laplacian's adjacency.
+
+    Args:
+        rest_verts: Vertex positions, shape (N, 3).
+        rest_faces: Face index array, shape (F, verts_per_face).
+
+    Returns:
+        Upper-triangular CSR matrix, shape (N, N), one length per edge.
+    """
+    i_verts, j_verts = _face_vertex_pairs(rest_faces)
+    edges = np.unique(np.sort(np.stack([i_verts, j_verts], axis=1), axis=1), axis=0)
+    lengths = np.linalg.norm(rest_verts[edges[:, 0]] - rest_verts[edges[:, 1]], axis=1)
+    n_verts = len(rest_verts)
+    return sp.sparse.csr_matrix(
+        (lengths, (edges[:, 0], edges[:, 1])), shape=(n_verts, n_verts)
+    )
+
+
+def geodesic_joint_distances(
+    rest_verts: np.ndarray, rest_faces: np.ndarray, joint_positions: np.ndarray
+) -> np.ndarray:
+    """Measures how far every vertex is from every joint along the mesh surface.
+
+    Each joint is snapped to its nearest vertex; the distance to a vertex is
+    that gap plus the shortest path along mesh edges (Dijkstra). Walking along
+    the surface keeps the upper lip far from a lower-lip joint even though the
+    two are close in space. Vertices no path can reach from a joint, such as a
+    separate shell, get their straight-line distance plus the longest
+    reachable distance, so joints on a vertex's own shell always rank first
+    and the rest fall back to spatial order.
+
+    Args:
+        rest_verts: Rest vertex positions, shape (N, 3).
+        rest_faces: Face index array, shape (F, verts_per_face).
+        joint_positions: Joint rest positions in the same space, shape (P, 3).
+
+    Returns:
+        Distances, shape (P, N), float64 and finite.
+
+    References:
+        plan/joints_geodesic_distance_filter/research.md Section 4.
+    """
+    verts = np.asarray(rest_verts, dtype=np.float64)
+    joints = np.asarray(joint_positions, dtype=np.float64)
+    euclidean = cdist(joints, verts)  # (P, N)
+    sources = euclidean.argmin(axis=1)  # (P,)
+    distances = dijkstra(
+        _edge_length_graph(verts, rest_faces), directed=False, indices=sources
+    )
+    distances += euclidean[np.arange(len(joints)), sources][:, None]
+    unreachable = ~np.isfinite(distances)
+    if unreachable.any():
+        distances[unreachable] = euclidean[unreachable] + distances[~unreachable].max()
+    return distances
+
+
+def candidate_joint_mask(
+    distances: np.ndarray, candidates_per_vertex: int
+) -> np.ndarray:
+    """Marks, per vertex, the joints close enough to be allowed to drive it.
+
+    Args:
+        distances: Joint-to-vertex distances, shape (P, N).
+        candidates_per_vertex: Number of nearest joints M kept per vertex.
+            A value of P or more keeps every joint.
+
+    Returns:
+        Boolean mask, shape (P, N), with exactly ``min(M, P)`` True entries
+        per column.
+
+    Raises:
+        ValueError: If ``candidates_per_vertex`` is below one.
+    """
+    if candidates_per_vertex < 1:
+        raise ValueError(
+            f"candidates_per_vertex={candidates_per_vertex} must be at least one"
+        )
+    n_joints = distances.shape[0]
+    if candidates_per_vertex >= n_joints:
+        return np.ones(distances.shape, dtype=bool)
+    nearest = np.argpartition(distances, candidates_per_vertex - 1, axis=0)
+    mask = np.zeros(distances.shape, dtype=bool)
+    np.put_along_axis(mask, nearest[:candidates_per_vertex], True, axis=0)
+    return mask
 
 
 @dataclass(frozen=True)
@@ -120,13 +225,16 @@ def build_training_schedule(
     stage_iterations: Sequence[int],
     max_influences: int,
     total_nnz_B_rt: int,  # noqa: N803 (matches SkinCompressor)
+    start_influences: int | None = None,
 ) -> tuple[TrainingPhase, ...]:
     """Builds the phases run() executes, one stage per entry of stage_iterations.
 
-    Stage i runs ``stage_iterations[i]`` steps and keeps
-    ``max_influences * 2 ** (N - 1 - i)`` weights per vertex, N being the
-    number of stages, so the budget halves each stage down to
-    ``max_influences``. The delta budget is constant. The first stage is
+    Stage i runs ``stage_iterations[i]`` steps. The influence budget starts at
+    ``start_influences`` and shrinks geometrically each stage down to
+    ``max_influences`` in the last one; with the default ceiling of
+    ``max_influences * 2 ** (N - 1)``, N being the number of stages, it simply
+    halves each stage. A single stage keeps ``max_influences`` throughout
+    whatever the ceiling. The delta budget is constant. The first stage is
     preceded by a warm-up of the same length with weight normalisation off;
     every stage itself runs normalised. One entry is the classic two-phase
     schedule.
@@ -135,28 +243,29 @@ def build_training_schedule(
         stage_iterations: Steps per stage; non-empty.
         max_influences: K reached in the final stage.
         total_nnz_B_rt: L used in every phase.
+        start_influences: Budget of the first stage; None doubles per stage.
+            With a candidate-joint mask this is the mask width, the widest
+            budget a vertex can use (see :func:`candidate_joint_mask`).
 
     Returns:
         ``len(stage_iterations) + 1`` phases.
 
     Raises:
-        ValueError: If ``stage_iterations`` is empty or an entry is below one.
+        ValueError: If ``stage_iterations`` is empty or an entry is below one,
+            or ``start_influences`` is below ``max_influences``.
 
     References:
-        Zhu & Gupta 2017 (gradual magnitude pruning); plan/research.md
-        Sections 4-5.
+        Zhu & Gupta 2017 (gradual magnitude pruning);
+        plan/joints_geodesic_distance_filter/research.md Section 5.
     """
     if not stage_iterations:
         raise ValueError("iterations must contain at least one stage")
-    n_stages = len(stage_iterations)
+    budgets = _annealed_influence_budgets(
+        len(stage_iterations), max_influences, start_influences
+    )
     stages = [
-        TrainingPhase(
-            steps,
-            max_influences * 2 ** (n_stages - 1 - i),
-            total_nnz_B_rt,
-            normalize_weights=True,
-        )
-        for i, steps in enumerate(stage_iterations)
+        TrainingPhase(steps, budget, total_nnz_B_rt, normalize_weights=True)
+        for steps, budget in zip(stage_iterations, budgets, strict=True)
     ]
     warm_up = TrainingPhase(
         stages[0].iterations,
@@ -165,6 +274,87 @@ def build_training_schedule(
         normalize_weights=False,
     )
     return (warm_up, *stages)
+
+
+def _annealed_influence_budgets(
+    n_stages: int, max_influences: int, start_influences: int | None
+) -> list[int]:
+    """Interpolates the per-stage influence budget from a ceiling down to K.
+
+    Args:
+        n_stages: Number of stages N.
+        max_influences: K, the budget of the last stage.
+        start_influences: Budget of the first stage; None means
+            ``K * 2 ** (N - 1)``, the halving rule.
+
+    Returns:
+        N budgets, geometrically spaced and rounded to integers; ``[K]`` for a
+        single stage.
+
+    Raises:
+        ValueError: If ``start_influences`` is below ``max_influences``.
+    """
+    if start_influences is not None and start_influences < max_influences:
+        raise ValueError(
+            f"start_influences={start_influences} must not be below "
+            f"max_influences={max_influences}"
+        )
+    if n_stages == 1:
+        return [max_influences]
+    ceiling = (
+        max_influences * 2 ** (n_stages - 1)
+        if start_influences is None
+        else start_influences
+    )
+    ratio = ceiling / max_influences
+    return [
+        round(max_influences * ratio ** ((n_stages - 1 - i) / (n_stages - 1)))
+        for i in range(n_stages)
+    ]
+
+
+def _resolve_candidate_joints(
+    requested: int | None,
+    has_joint_matrices: bool,
+    max_influences: int,
+    number_of_bones: int,
+) -> int | None:
+    """Turns the candidate_joints_per_vertex argument into a count or None.
+
+    Args:
+        requested: The constructor argument: None for the default, 0 to turn
+            the filter off, otherwise the count M.
+        has_joint_matrices: Whether joint positions are available.
+        max_influences: K, the lower bound for M.
+        number_of_bones: P, the exclusive upper bound for M.
+
+    Returns:
+        M, or None when there is no filter.
+
+    Raises:
+        ValueError: If a count is requested without joint matrices, or lies
+            outside K <= M < P.
+    """
+    if not has_joint_matrices:
+        if requested:
+            raise ValueError(
+                "candidate_joints_per_vertex needs rest_joint_matrices: the "
+                "filter ranks joints by their distance to each vertex"
+            )
+        return None
+    if requested is None:
+        default = min(2 * max_influences, number_of_bones - 1)
+        # Fewer joints than K + 1 cannot run at all; leave that to run().
+        return default if default >= max_influences else None
+    if requested == 0:
+        return None
+    if not max_influences <= requested < number_of_bones:
+        raise ValueError(
+            f"candidate_joints_per_vertex={requested} must satisfy "
+            f"max_influences={max_influences} <= M < "
+            f"number_of_bones={number_of_bones}; pass 0 to turn the filter off"
+        )
+    return requested
 
 
 def _as_stage_iterations(iterations: int | Sequence[int]) -> tuple[int, ...]:
@@ -230,6 +420,11 @@ class SkinCompressor:
             matrices provided). The paper's experiments use P=40 (Table 1).
         max_influences: Max non-zero weights per vertex K (default 8).
             Standard GPU skinning pipeline constraint (Section 2.2).
+        candidate_joints_per_vertex: Nearest joints M each vertex may be
+            weighted to, or None when no joint matrices were given or the
+            filter was turned off. See candidate_joint_mask.
+        candidate_mask: Boolean (P, N) tensor built by run() from the joint
+            positions, or None without a filter.
         total_nnz_B_rt: Total non-zeros in B_rt matrix (default 6000).
             Corresponds to ~1000 transformations with 6-DOF representation.
             Achieves ~90% sparsity while maintaining accuracy (Table 1).
@@ -280,6 +475,7 @@ class SkinCompressor:
         init_weight: float = 1e-3,
         power: int = 2,
         seed: int = _DEFAULT_SEED,
+        candidate_joints_per_vertex: int | None = None,
     ):
         """Initializes the SkinCompressor.
 
@@ -310,11 +506,19 @@ class SkinCompressor:
                 worst-case fit, Section 4.1).
             seed: Torch random seed for the initial deltas and weights
                 (default 12345).
+            candidate_joints_per_vertex: With rest_joint_matrices, the number
+                of nearest joints M (by geodesic distance along the mesh) a
+                vertex may take its weights from, so each joint drives the
+                region around it. None picks ``min(2 * K, P - 1)``; 0 turns
+                the filter off. Must satisfy K <= M < P. Also the ceiling of
+                an annealed schedule. Not allowed without joint matrices.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
                 number_of_bones disagrees with the number of matrices given;
-                if iterations is an empty sequence or any entry is below one.
+                if iterations is an empty sequence or any entry is below one;
+                if candidate_joints_per_vertex is given without joint
+                matrices or lies outside K <= M < P.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -382,10 +586,19 @@ class SkinCompressor:
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
         self.init_weight = init_weight
         self.power = power
+        self.candidate_joints_per_vertex = _resolve_candidate_joints(
+            candidate_joints_per_vertex,
+            has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
+            max_influences=max_influences,
+            number_of_bones=self.number_of_bones,
+        )
 
         self.stage_iterations = _as_stage_iterations(iterations)
         self.schedule: Sequence[TrainingPhase] = build_training_schedule(
-            self.stage_iterations, max_influences, total_nnz_B_rt
+            self.stage_iterations,
+            max_influences,
+            total_nnz_B_rt,
+            start_influences=self.candidate_joints_per_vertex,
         )
 
         self.seed = seed
@@ -408,6 +621,7 @@ class SkinCompressor:
 
         self.L: torch.Tensor | None = None
         self.rest_pose: torch.Tensor | None = None
+        self.candidate_mask: torch.Tensor | None = None
         self.optimizer: torch.optim.Adam | None = None
 
     def run(self, output_location: str | Path) -> None:
@@ -425,10 +639,12 @@ class SkinCompressor:
             4. Initialize B_rt (transformation parameters) with small random values
             5. Initialize W (skinning weights) with small random values
             6. Prepare rest pose with homogeneous coordinates
-            7. Run every phase of self.schedule in order
-            8. Compute final normalized weights
-            9. Evaluate and report error metrics
-            10. Save compressed results to NPZ file
+            7. Build the candidate-joint mask from the joint positions, if any
+            8. Run every phase of self.schedule in order
+            9. Compute final normalized weights
+            10. Evaluate and report error metrics, and joint coverage when
+                joint matrices were given
+            11. Save compressed results to NPZ file
 
         Training Schedule:
             self.schedule is a sequence of TrainingPhase objects, built by
@@ -523,14 +739,17 @@ class SkinCompressor:
             .float()
             .to(self.device)
         )
+        self.candidate_mask = self._build_candidate_mask()
         # W PxN (numBones x numVertices) weights one per vertex per bone
         W = (
             (1e-8 * torch.randn(self.number_of_bones, N))
             .clone()
             .float()
             .to(self.device)
-            .requires_grad_()
         )
+        if self.candidate_mask is not None:
+            W *= self.candidate_mask
+        W.requires_grad_()
 
         for index, phase in enumerate(self.schedule, start=1):
             print(
@@ -559,6 +778,8 @@ class SkinCompressor:
         self.reconstruction_error = ReconstructionError(
             max_abs=float(maxDelta), mean_abs=float(meanDelta)
         )
+        if self.rest_joint_matrices_3x4 is not None:
+            self._report_joint_coverage(Wn)
 
         shapeXforms = B.detach().cpu().numpy()
 
@@ -599,6 +820,45 @@ class SkinCompressor:
                     f"phase {index}: total_nnz_B_rt={phase.total_nnz_B_rt} exceeds "
                     f"6*S*P={n_coefficients}"
                 )
+
+    def _build_candidate_mask(self) -> torch.Tensor | None:
+        """Builds the (P, N) mask of joints allowed to weight each vertex.
+
+        Returns:
+            Boolean tensor on self.device, or None when there is no filter.
+
+        Raises:
+            RuntimeError: If a filter is set but no joint matrices are held.
+        """
+        if self.candidate_joints_per_vertex is None:
+            return None
+        if self.rest_joint_matrices_3x4 is None:
+            raise RuntimeError("candidate_joints_per_vertex is set without joints")
+        distances = geodesic_joint_distances(
+            self.model_data.rest_verts,
+            self.model_data.rest_faces,
+            self.rest_joint_matrices_3x4[:, :3, 3],
+        )
+        mask = candidate_joint_mask(distances, self.candidate_joints_per_vertex)
+        return torch.from_numpy(mask).to(self.device)
+
+    @staticmethod
+    def _report_joint_coverage(Wn: torch.Tensor) -> None:  # noqa: N803
+        """Prints how many vertices each joint drives and lists idle joints.
+
+        Args:
+            Wn: Normalised weights, shape (P, N).
+        """
+        vertices_per_joint = (Wn > 0).sum(dim=1)  # (P,)
+        print(
+            "vertices per joint: "
+            f"min {vertices_per_joint.min().item()} "
+            f"median {vertices_per_joint.median().item()} "
+            f"max {vertices_per_joint.max().item()}"
+        )
+        idle = torch.nonzero(vertices_per_joint == 0).flatten().tolist()
+        if idle:
+            print(f"joints driving no vertex: {idle}")
 
     def get_matrix_for_optimization(self) -> torch.Tensor:
         """Constructs target matrix A ∈ ℝ^(3S×N) from blendshape deltas (Equation 3).
@@ -747,9 +1007,11 @@ class SkinCompressor:
             After each Adam step, we project parameters onto constraint sets:
 
             For W (skinning weights):
-                1. Keep only K largest weights per vertex (spatial sparsity)
-                2. Clamp to non-negative values (non-negativity constraint)
-                3. If phase.normalize_weights, normalize to sum to 1 (partition of unity)
+                1. Zero the joints outside the vertex's candidate set, when
+                   self.candidate_mask is set (locality)
+                2. Keep only K largest weights per vertex (spatial sparsity)
+                3. Clamp to non-negative values (non-negativity constraint)
+                4. If phase.normalize_weights, normalize to sum to 1 (partition of unity)
 
             For B_rt (transformations):
                 1. Keep only L largest values globally by absolute value
@@ -825,6 +1087,8 @@ class SkinCompressor:
             self.optimizer.step()
 
             with torch.no_grad():
+                if self.candidate_mask is not None:
+                    W *= self.candidate_mask
                 W_cutoff = torch.topk(W, phase.max_influences + 1, dim=0).values[-1, :]
                 W_mask = W_cutoff < W
                 W_pruned = W_mask * W
