@@ -3,11 +3,29 @@
 import numpy as np
 import pytest
 
-from metacompskin.model_fit import SkinCompressor, TrainingPhase
+from metacompskin.model_fit import (
+    SkinCompressor,
+    TrainingPhase,
+    candidate_joint_mask,
+    geodesic_joint_distances,
+)
 
 
 def _identity_joint_matrices(n_bones: int) -> np.ndarray:
     return np.tile(np.eye(4), (n_bones, 1, 1))
+
+
+def _joint_matrices_at(positions: np.ndarray) -> np.ndarray:
+    matrices = np.tile(np.eye(4), (len(positions), 1, 1))
+    matrices[:, :3, 3] = positions
+    return matrices
+
+
+def _grid_joint_positions(n_joints: int) -> np.ndarray:
+    """Joints on every other vertex of the 5x5 grid, in its (uncentred) space."""
+    xs, ys = np.meshgrid(np.arange(5.0), np.arange(5.0))
+    points = np.stack([xs.ravel(), ys.ravel(), np.zeros(25)], axis=1)
+    return points[::2][:n_joints]
 
 
 class TestSkinCompressorSettings:
@@ -258,3 +276,109 @@ class TestSkinCompressorSchedule:
 
         with pytest.raises(ValueError, match="at least one"):
             compressor.run(tmp_path / "compressed.npz")
+
+
+class TestCandidateJoints:
+    _FAST = {"iterations": 300, "total_nnz_B_rt": 100}
+
+    def test_default_is_twice_the_influences_with_joint_matrices(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(40),
+        )
+
+        assert compressor.candidate_joints_per_vertex == 16
+
+    def test_default_stays_below_the_bone_count(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(10),
+        )
+
+        assert compressor.candidate_joints_per_vertex == 9
+
+    def test_default_is_off_when_no_valid_count_exists(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(7),  # fewer than K + 1
+        )
+
+        assert compressor.candidate_joints_per_vertex is None
+
+    def test_there_is_no_filter_without_joint_matrices(self, grid_model_data):
+        compressor = SkinCompressor(model_data=grid_model_data)
+
+        assert compressor.candidate_joints_per_vertex is None
+
+    def test_a_filter_without_joint_matrices_is_rejected(self, grid_model_data):
+        with pytest.raises(ValueError, match="rest_joint_matrices"):
+            SkinCompressor(model_data=grid_model_data, candidate_joints_per_vertex=16)
+
+    def test_zero_disables_the_filter(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(40),
+            candidate_joints_per_vertex=0,
+        )
+
+        assert compressor.candidate_joints_per_vertex is None
+
+    @pytest.mark.parametrize("candidates", [7, 40])
+    def test_must_lie_between_the_influences_and_the_bone_count(
+        self, grid_model_data, candidates
+    ):
+        with pytest.raises(ValueError, match="candidate_joints_per_vertex"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_identity_joint_matrices(40),
+                candidate_joints_per_vertex=candidates,
+            )
+
+    def test_caps_the_annealing_ceiling(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=(100, 100, 300),
+            rest_joint_matrices=_identity_joint_matrices(40),
+            max_influences=2,
+            candidate_joints_per_vertex=6,
+        )
+
+        assert [p.max_influences for p in compressor.schedule] == [6, 6, 3, 2]
+
+    def test_run_only_weights_joints_near_each_vertex(self, grid_model_data, tmp_path):
+        positions = _grid_joint_positions(10)
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_joint_matrices_at(positions),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            **self._FAST,
+        )
+        allowed = candidate_joint_mask(
+            geodesic_joint_distances(
+                grid_model_data.rest_verts, grid_model_data.rest_faces, positions
+            ),
+            3,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+
+        weights = np.load(tmp_path / "compressed.npz")["weights"]  # (N, P)
+        assert (weights != 0).sum(axis=1).max() <= 2
+        assert not ((weights.T != 0) & ~allowed).any()
+
+    def test_run_reports_joints_driving_no_vertex(
+        self, grid_model_data, tmp_path, capsys
+    ):
+        positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_joint_matrices_at(positions),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            **self._FAST,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+
+        assert "joints driving no vertex: [9]" in capsys.readouterr().out

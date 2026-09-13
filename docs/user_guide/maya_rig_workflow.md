@@ -99,6 +99,12 @@ Two consequences for your rig:
   own joint matrices to the compressor they are echoed back in `restXform`, and you
   can place the joints there. Either way, the skin cluster's bind pose takes care of
   the difference (see section 3.5).
+- **Unless you supplied the joints, in which case position decides who drives what.**
+  With your own joint matrices the compressor only lets a vertex be weighted to its
+  nearest joints along the surface (see [Custom joints](compressing.md#custom-joints)),
+  so each joint covers the region around it and can double as a tweaker: put the
+  solved motion on the tweaker control's parent and let the animator offset the
+  control on top.
 - **The joints are independent.** Keep them in a flat hierarchy, all children of one
   root. Parenting one virtual joint under another changes what its local transform
   means and will break the result. A single root above all of them is fine, and is

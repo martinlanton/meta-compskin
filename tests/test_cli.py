@@ -5,6 +5,7 @@ import pytest
 from conftest import make_grid_model, write_model_npz
 
 from metacompskin.cli import main
+from metacompskin.model_fit import candidate_joint_mask, geodesic_joint_distances
 
 _FAST = ["--iterations", "300", "--total-nnz-b-rt", "100"]
 
@@ -32,6 +33,37 @@ def test_cli_uses_joint_matrices_stored_in_the_model_file(tmp_path):
     result = np.load(output)
     assert result["weights"].shape == (25, 10)
     np.testing.assert_allclose(result["restXform"], matrices[:, :3, :])
+
+
+def test_cli_passes_the_candidate_joint_count(tmp_path):
+    model_data = make_grid_model()
+    matrices = np.tile(np.eye(4), (10, 1, 1))
+    matrices[:, :3, 3] = model_data.rest_verts[::2][:10]
+    model = write_model_npz(
+        tmp_path / "grid.npz", model_data, rest_joint_matrices=matrices
+    )
+    output = tmp_path / "compressed.npz"
+    allowed = candidate_joint_mask(
+        geodesic_joint_distances(
+            model_data.rest_verts, model_data.rest_faces, matrices[:, :3, 3]
+        ),
+        3,
+    )
+
+    main(
+        [
+            str(model),
+            str(output),
+            *_FAST,
+            "--max-influences",
+            "2",
+            "--candidate-joints-per-vertex",
+            "3",
+        ]
+    )
+
+    weights = np.load(output)["weights"]  # (N, P)
+    assert not ((weights.T != 0) & ~allowed).any()
 
 
 def test_cli_can_ignore_stored_joint_matrices(tmp_path):

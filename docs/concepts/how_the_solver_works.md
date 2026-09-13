@@ -48,18 +48,24 @@ raw weights `W`. Both are ordinary PyTorch tensors optimised with Adam
 the constraints, so after **every** step the parameters are projected back
 onto the feasible set. This is the "proximal" part of the method:
 
-1. **Weights, sparsity and sign.** For each vertex keep only the $K$ largest
+1. **Weights, locality** (custom joints only). Zero every weight on a joint
+   that is not among the vertex's $M$ nearest along the mesh surface, so a
+   joint only ever drives the region around it. The mask is computed once
+   from the joint rest positions (geodesic distance by Dijkstra on the mesh
+   edges); see `candidate_joints_per_vertex` in
+   [Compressing](../user_guide/compressing.md#custom-joints).
+2. **Weights, sparsity and sign.** For each vertex keep only the $K$ largest
    weights and set the rest to zero, then clamp negatives to zero. One
    `torch.topk` call per iteration.
-2. **Weights, partition of unity.** Divide each vertex's weights by their sum.
+3. **Weights, partition of unity.** Divide each vertex's weights by their sum.
    In phase 1 this is skipped (see below); in phase 2 it is applied inside the
    forward pass.
-3. **Deltas, global sparsity.** Across the whole `B_rt` tensor keep the $L$
+4. **Deltas, global sparsity.** Across the whole `B_rt` tensor keep the $L$
    coefficients with the largest absolute value and zero every other one.
    Unlike the weights, the budget is global: the solver decides freely which
    shapes and joints deserve non-zeros.
 
-Projection 3 is what distinguishes this method from earlier skinning
+Projection 4 is what distinguishes this method from earlier skinning
 decompositions. Because it runs from the first iteration, the solver adapts
 the weights to a sparse set of deltas rather than being handed a dense
 solution that is then pruned. The paper shows that pruning a dense Dem Bones
@@ -104,9 +110,9 @@ for when this helps and how to set it.
 
 - `B_rt` starts as small Gaussian noise (scale `init_weight`, $10^{-3}$).
 - `W` starts as very small Gaussian noise ($10^{-8}$), so the first
-  projection picks an essentially random $K$ joints per vertex; the optimiser
-  sorts it out within the first few hundred iterations (Figure 1 of the paper
-  shows this convergence).
+  projection picks an essentially random $K$ joints per vertex (among the $M$
+  nearest, with custom joints); the optimiser sorts it out within the first
+  few hundred iterations (Figure 1 of the paper shows this convergence).
 - The torch seed is the `seed` argument, 12345 by default. Runs with the same
   seed on the same hardware and library versions are bit-for-bit repeatable;
   the regression tests rely on this. Different GPUs, CPU versus GPU, or
@@ -157,6 +163,7 @@ tables are in millimetres). How to interpret them is in
 | `iterations` | 10 000 per phase | lower error, longer solve; returns diminish past ~20 000 total; as a sequence, anneals the influence budget over more phases | faster, rougher; 600 is enough to check a pipeline |
 | `number_of_bones` ($P$) | 100 | more capacity, higher runtime cost per frame | cheaper runtime, error rises quickly below ~20 |
 | `max_influences` ($K$) | 8 | smoother weight maps, more shader cost | must stay ≥ 4 or so; must be smaller than $P$ |
+| `candidate_joints_per_vertex` ($M$, custom joints only) | $\min(2K, P-1)$ | more freedom for the solver, lower error, joints reach further from their position | tighter locality per joint, higher error; $M = K$ leaves the solver nothing to choose |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
 | `alpha` | per model, 10 or 50 | smoother, blurrier result | sharper, risk of noisy weights; lower for dense meshes |
 | `power` ($p$) | 2 | high values (12) minimise the *worst* error at the cost of smoothness; needs more capacity and many more iterations | |
