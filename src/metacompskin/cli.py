@@ -18,8 +18,9 @@ If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
 passed; each joint then only drives the vertices nearest to it along the mesh,
 ``--candidate-joints-per-vertex`` sets how many joints a vertex may use (0 turns
-the filter off). CUDA is used automatically when this interpreter's torch sees
-a GPU.
+the filter off). Pass ``--warm-up false`` to disable the unnormalised warm-up
+phase and run only normalised training (useful for research). CUDA is used
+automatically when this interpreter's torch sees a GPU.
 """
 
 import argparse
@@ -53,6 +54,30 @@ def _int_list(text: str) -> tuple[int, ...]:
     except ValueError as e:
         raise argparse.ArgumentTypeError(
             f"expected comma-separated integers, got {text!r}"
+        ) from e
+
+
+def _root_joint_arg(text: str) -> int | str | None:
+    """Converts a root_joint CLI argument to its resolved form.
+
+    Args:
+        text: The raw --root-joint value.
+
+    Returns:
+        None if 'auto', a string if 'new' or 'none', or an int for digit strings.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is unrecognized.
+    """
+    if text == "auto":
+        return None
+    if text in ("new", "none"):
+        return text
+    try:
+        return int(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"--root-joint must be 'auto', 'new', 'none', or an integer, got {text!r}"
         ) from e
 
 
@@ -92,6 +117,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--ignore-joint-matrices",
         action="store_true",
         help="Do not use rest_joint_matrices stored in the model file.",
+    )
+    parser.add_argument(
+        "--root-joint",
+        type=_root_joint_arg,
+        default=None,
+        help="Root influence designation: 'auto' (default based on joint matrices), "
+        "'none' (no root), 'new' (synthetic root), or an index [0, P)",
+    )
+    parser.add_argument(
+        "--warm-up",
+        type=lambda x: x.lower() in ("true", "on", "1", "yes"),
+        default=True,
+        help="Enable warm-up phase (true/false, default true)",
     )
     return parser
 
@@ -147,10 +185,16 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "power",
         "seed",
         "candidate_joints_per_vertex",
+        "root_joint",
     ):
-        value = getattr(args, option)
+        value = getattr(args, option, None)
         if value is not None:
             settings[option.replace("nnz_b_rt", "nnz_B_rt")] = value
+
+    # Handle warm_up -> warm_up_enabled mapping
+    if hasattr(args, "warm_up"):
+        settings["warm_up_enabled"] = args.warm_up
+
     return settings
 
 

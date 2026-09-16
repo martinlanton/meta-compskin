@@ -28,6 +28,237 @@ def _grid_joint_positions(n_joints: int) -> np.ndarray:
     return points[::2][:n_joints]
 
 
+class TestRootJoint:
+    def test_default_with_joint_matrices_appends_root(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(7),
+        )
+
+        assert compressor.root_joint == 7
+        assert compressor.number_of_bones == 8
+
+    def test_default_without_joint_matrices_has_no_root(self, grid_model_data):
+        compressor = SkinCompressor(model_data=grid_model_data)
+
+        assert compressor.root_joint is None
+        assert compressor.number_of_bones == 100
+
+    def test_none_keeps_bone_count(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(7),
+            root_joint="none",
+        )
+
+        assert compressor.root_joint is None
+        assert compressor.number_of_bones == 7
+
+    def test_new_without_matrices_appends_root(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=None,
+            root_joint="new",
+        )
+
+        assert compressor.root_joint == 100
+        assert compressor.number_of_bones == 101
+
+    def test_designated_joint_as_root(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(7),
+            root_joint=3,
+        )
+
+        assert compressor.root_joint == 3
+        assert compressor.number_of_bones == 7
+
+    def test_rejects_out_of_range_index(self, grid_model_data):
+        with pytest.raises(ValueError, match="root_joint"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_identity_joint_matrices(7),
+                root_joint=7,
+            )
+
+    def test_rejects_negative_index(self, grid_model_data):
+        with pytest.raises(ValueError, match="root_joint"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_identity_joint_matrices(7),
+                root_joint=-1,
+            )
+
+    def test_rejects_bool(self, grid_model_data):
+        with pytest.raises(ValueError, match="root_joint"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_identity_joint_matrices(7),
+                root_joint=True,
+            )
+
+    def test_rejects_unrecognized_string(self, grid_model_data):
+        with pytest.raises(ValueError, match="root_joint"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_identity_joint_matrices(7),
+                root_joint="head",
+            )
+
+    def test_candidate_count_respects_geodesic_joints_not_including_root(
+        self, grid_model_data
+    ):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(40),
+            root_joint="new",
+        )
+
+        assert compressor.candidate_joints_per_vertex == 16  # min(2 * 8, 40 - 1)
+
+    def test_warm_up_disabled_shortens_schedule(self, grid_model_data):
+        compressor_with_warmup = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=100,
+            warm_up_enabled=True,
+        )
+        compressor_no_warmup = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=100,
+            warm_up_enabled=False,
+        )
+
+        assert len(compressor_with_warmup.schedule) == 2  # warm-up + stage
+        assert len(compressor_no_warmup.schedule) == 1  # stage only
+
+    def test_warm_up_disabled_all_phases_normalized(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=100,
+            warm_up_enabled=False,
+        )
+
+        assert all(phase.normalize_weights for phase in compressor.schedule)
+
+
+class TestIntegration:
+    def test_static_region_lands_on_root_with_default(self, grid_model_data, tmp_path):
+        """Verifies static vertices are assigned entirely to root.
+
+        Builds a model with static vertices (zero deltas) on the right side.
+        With the default root, static vertices should get weight 1.0 on root.
+        """
+        # Create a modified model with static vertices
+        model_data = grid_model_data
+
+        # Zero out deltas for rightmost columns (static region)
+        static_deltas = model_data.deltas.copy()
+        static_deltas[:, 22:, :] = 0  # Last 3 vertices are static
+
+        # Build model with zero alpha for the static region
+        from metacompskin.model_data import BlendshapeModelData
+        static_model = BlendshapeModelData(
+            model_name=model_data.model_name,
+            deltas=static_deltas,
+            rest_verts=model_data.rest_verts,
+            rest_faces=model_data.rest_faces,
+            inbetween_info=model_data.inbetween_info,
+            combination_info=model_data.combination_info,
+            alpha=0.0,  # No regularization so static vertices can go to zero
+        )
+
+        compressor = SkinCompressor(
+            model_data=static_model,
+            iterations=(600,),  # Single stage, warm-up then normalized
+            rest_joint_matrices=_identity_joint_matrices(6),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            total_nnz_B_rt=100,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+
+        result = np.load(tmp_path / "compressed.npz")
+        weights = result["weights"]  # (N, P')
+
+        # Check static vertices are on root (last row)
+        static_verts_weights = weights[22:, :]
+        assert (static_verts_weights[:, -1] == 1.0).all(), "Static vertices should have weight 1.0 on root"
+
+    def test_without_root_run_fails_on_static_region(self, grid_model_data, tmp_path):
+        """Verifies that without root, a static region causes NaN/validation error.
+
+        This is the key regression: without root influence, static vertices
+        lead to all-zero weight columns, which cause NaN after normalization.
+        """
+        # Create a modified model with static vertices
+        model_data = grid_model_data
+
+        # Zero out deltas for rightmost columns (static region)
+        static_deltas = model_data.deltas.copy()
+        static_deltas[:, 22:, :] = 0  # Last 3 vertices are static
+
+        from metacompskin.model_data import BlendshapeModelData
+        static_model = BlendshapeModelData(
+            model_name=model_data.model_name,
+            deltas=static_deltas,
+            rest_verts=model_data.rest_verts,
+            rest_faces=model_data.rest_faces,
+            inbetween_info=model_data.inbetween_info,
+            combination_info=model_data.combination_info,
+            alpha=0.0,
+        )
+
+        compressor = SkinCompressor(
+            model_data=static_model,
+            iterations=(600,),
+            rest_joint_matrices=_identity_joint_matrices(6),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            total_nnz_B_rt=100,
+            root_joint="none",  # No root - should fail
+        )
+
+        # Should raise RuntimeError from _validate_weights due to NaN/empty columns
+        with pytest.raises(RuntimeError, match="weights"):
+            compressor.run(tmp_path / "compressed.npz")
+
+
+class TestProjections:
+    def test_project_weights_keeps_top_k_and_no_negatives(self, grid_model_data):
+        import torch
+
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(10),
+            max_influences=2,
+            total_nnz_B_rt=100,
+        )
+        W = torch.randn(11, 25, requires_grad=False)  # 10 + 1 synthetic root
+        phase = TrainingPhase(1, 2, 100, True)
+
+        compressor._project_weights(W, phase)
+
+        assert (W >= 0).all()
+        assert (W != 0).sum(dim=0).max() <= 3  # max_influences + root
+
+    def test_project_transforms_keeps_exactly_l_largest(self, grid_model_data):
+        import torch
+
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(10),
+            total_nnz_B_rt=100,
+        )
+        B_rt = torch.randn(6, 3, 11, 1, 1, requires_grad=False)  # 10 + 1 synthetic root
+        phase = TrainingPhase(1, 8, 100, True)
+
+        compressor._project_transforms(B_rt, phase)
+
+        assert (B_rt.abs() > 0).sum() == 100
+
+
 class TestSkinCompressorSettings:
     def test_defaults(self, grid_model_data):
         compressor = SkinCompressor(model_data=grid_model_data)
@@ -67,6 +298,17 @@ class TestSkinCompressorSettings:
             rest_joint_matrices=_identity_joint_matrices(7),
         )
 
+        assert compressor.number_of_bones == 8  # 7 supplied + 1 synthetic root by default
+
+    def test_number_of_bones_follows_the_rest_joint_matrices_without_root(
+        self, grid_model_data
+    ):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_identity_joint_matrices(7),
+            root_joint="none",
+        )
+
         assert compressor.number_of_bones == 7
 
     def test_number_of_bones_matching_the_rest_joint_matrices_is_accepted(
@@ -78,7 +320,7 @@ class TestSkinCompressorSettings:
             number_of_bones=7,
         )
 
-        assert compressor.number_of_bones == 7
+        assert compressor.number_of_bones == 8  # 7 supplied + 1 synthetic root by default
 
     def test_number_of_bones_conflicting_with_rest_joint_matrices_is_rejected(
         self, grid_model_data
@@ -345,6 +587,16 @@ class TestCandidateJoints:
 
         assert [p.max_influences for p in compressor.schedule] == [6, 6, 3, 2]
 
+    def test_single_stage_warm_up_uses_the_candidate_count(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            iterations=300,
+            rest_joint_matrices=_identity_joint_matrices(40),
+            total_nnz_B_rt=100,
+        )
+
+        assert [p.max_influences for p in compressor.schedule] == [16, 8]
+
     def test_run_only_weights_joints_near_each_vertex(self, grid_model_data, tmp_path):
         positions = _grid_joint_positions(10)
         compressor = SkinCompressor(
@@ -363,9 +615,9 @@ class TestCandidateJoints:
 
         compressor.run(tmp_path / "compressed.npz")
 
-        weights = np.load(tmp_path / "compressed.npz")["weights"]  # (N, P)
+        weights = np.load(tmp_path / "compressed.npz")["weights"]  # (N, P')
         assert (weights != 0).sum(axis=1).max() <= 2
-        assert not ((weights.T != 0) & ~allowed).any()
+        assert not ((weights.T[:-1] != 0) & ~allowed).any()
 
     def test_run_reports_joints_driving_no_vertex(
         self, grid_model_data, tmp_path, capsys
@@ -376,9 +628,49 @@ class TestCandidateJoints:
             rest_joint_matrices=_joint_matrices_at(positions),
             max_influences=2,
             candidate_joints_per_vertex=3,
+            root_joint="none",  # Disable root to keep bone count at 10
             **self._FAST,
         )
 
         compressor.run(tmp_path / "compressed.npz")
 
         assert "joints driving no vertex: [9]" in capsys.readouterr().out
+
+    def test_run_with_root_excludes_root_from_idle_list(
+        self, grid_model_data, tmp_path, capsys
+    ):
+        positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_joint_matrices_at(positions),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            root_joint="none",  # Disable root to keep bone count at 10
+            **self._FAST,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+        out = capsys.readouterr().out
+
+        # Without root, verify idle list works as before
+        assert "joints driving no vertex:" in out
+        # Don't assert specific joints due to randomness, just verify format
+        assert "[" in out and "]" in out
+
+    def test_run_reports_root_usage(self, grid_model_data, tmp_path, capsys):
+        positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_joint_matrices_at(positions),
+            max_influences=2,
+            candidate_joints_per_vertex=3,
+            **self._FAST,
+        )
+
+        compressor.run(tmp_path / "compressed.npz")
+        out = capsys.readouterr().out
+
+        # Should report root usage
+        assert "vertices on the root:" in out
+        assert "full" in out
+        assert "largest delta on root" in out

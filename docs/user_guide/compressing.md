@@ -30,7 +30,7 @@ python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations
 Every constructor setting below has a matching option (`--iterations` also
 takes a comma-separated list, `--number-of-bones`,
 `--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
-`--seed`). Joint matrices stored
+`--seed`, `--warm-up`). Joint matrices stored
 in the model file by the exporter are used unless you pass
 `--ignore-joint-matrices`. This is the command the Maya pipeline runs in a
 subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
@@ -42,7 +42,7 @@ Constructor arguments:
 | Argument | Default | Meaning |
 |----------|---------|---------|
 | `model_data` | required | The input model. |
-| `iterations` | 10 000 | Steps per stage. An int is one stage (the classic two-phase run). A sequence such as `(5000, 5000, 10000)` runs one stage per entry, halving the influence budget each stage from $K \cdot 2^{N-1}$ down to $K$; the unnormalised warm-up takes the first entry's length. Needs $K \cdot 2^{N-1} < P$. Make the last stage the longest. |
+| `iterations` | 10 000 | Steps per stage. An int is one stage (the classic two-phase run). A sequence such as `(5000, 5000, 10000)` runs one stage per entry, halving the influence budget each stage from $K \cdot 2^{N-1}$ down to $K$; the unnormalised warm-up takes the first entry's length when `warm_up_enabled=True`. Needs $K \cdot 2^{N-1} < P$. Make the last stage the longest. |
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
 | `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
@@ -51,6 +51,7 @@ Constructor arguments:
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
 | `seed` | 12345 | Torch seed for the random initial deltas and weights. Change it to explore other local minima. |
+| `warm_up_enabled` | `True` | Whether to include an initial unnormalised warm-up phase. Set to `False` to skip the warm-up and run only normalised training stages; useful for research comparing the impact of the warm-up decay process. |
 
 Attributes you can change after construction and before `run`:
 

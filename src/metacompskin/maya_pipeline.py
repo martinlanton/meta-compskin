@@ -107,6 +107,8 @@ class CompressionSettings:
     alpha: float | None = None
     seed: int | None = None
     candidate_joints_per_vertex: int | None = None
+    root_joint: int | str | None = None
+    warm_up_enabled: bool | None = None
     use_joint_matrices: bool = True
 
 
@@ -447,10 +449,14 @@ def compression_command(
         "--alpha": settings.alpha,
         "--seed": settings.seed,
         "--candidate-joints-per-vertex": settings.candidate_joints_per_vertex,
+        "--root-joint": settings.root_joint,
     }
     for flag, value in options.items():
         if value is not None:
             command += [flag, str(value)]
+
+    if settings.warm_up_enabled is not None:
+        command += ["--warm-up", str(settings.warm_up_enabled)]
     if not settings.use_joint_matrices:
         command.append("--ignore-joint-matrices")
     return command

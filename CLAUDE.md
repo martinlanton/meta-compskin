@@ -72,8 +72,9 @@ Input .npz (blendshapes)
 | `L` | 6000 | Non-zeros in transformation matrices |
 | `alpha` | model-specific | Laplacian regularization strength |
 | `seed` | 12345 | Torch seed for the random initialization |
-| `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases |
+| `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases. Warm-up runs at M (mask width) when geodesic filtering is on. |
 | `candidate_joints_per_vertex` | `min(2K, P-1)` with joint matrices | M nearest joints (geodesic) a vertex may be weighted to; also the annealing ceiling; 0 disables |
+| `root_joint` | `"new"` with matrices, `None` else | Root influence: `None`/auto, `"new"` (synthetic), `"none"` (off), or a joint index. Static/unexplainable vertices land on root. |
 
 ## Testing
 

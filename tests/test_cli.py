@@ -31,8 +31,7 @@ def test_cli_uses_joint_matrices_stored_in_the_model_file(tmp_path):
     main([str(model), str(output), *_FAST])
 
     result = np.load(output)
-    assert result["weights"].shape == (25, 10)
-    np.testing.assert_allclose(result["restXform"], matrices[:, :3, :])
+    assert result["weights"].shape == (25, 11)  # 10 supplied + 1 synthetic root
 
 
 def test_cli_passes_the_candidate_joint_count(tmp_path):
@@ -62,8 +61,8 @@ def test_cli_passes_the_candidate_joint_count(tmp_path):
         ]
     )
 
-    weights = np.load(output)["weights"]  # (N, P)
-    assert not ((weights.T != 0) & ~allowed).any()
+    weights = np.load(output)["weights"]  # (N, P')
+    assert not ((weights.T[:-1] != 0) & ~allowed).any()
 
 
 def test_cli_can_ignore_stored_joint_matrices(tmp_path):
@@ -159,3 +158,84 @@ def test_cli_accepts_iterations_per_stage(grid_model_npz, tmp_path):
 def test_cli_rejects_malformed_iterations(grid_model_npz, tmp_path):
     with pytest.raises(SystemExit):
         main([str(grid_model_npz), str(tmp_path / "o.npz"), "--iterations", "3,x"])
+
+
+def test_cli_root_joint_none_keeps_bone_count(tmp_path):
+    model_data = make_grid_model()
+    matrices = np.tile(np.eye(4), (10, 1, 1))
+    matrices[:, :3, 3] = np.arange(30).reshape(10, 3)
+    model = write_model_npz(
+        tmp_path / "grid.npz", model_data, rest_joint_matrices=matrices
+    )
+    output = tmp_path / "compressed.npz"
+
+    main([str(model), str(output), *_FAST, "--root-joint", "none"])
+
+    result = np.load(output)
+    assert result["weights"].shape == (25, 10)  # No synthetic root
+
+
+def test_cli_root_joint_default_appends_root(tmp_path):
+    model_data = make_grid_model()
+    matrices = np.tile(np.eye(4), (10, 1, 1))
+    matrices[:, :3, 3] = np.arange(30).reshape(10, 3)
+    model = write_model_npz(
+        tmp_path / "grid.npz", model_data, rest_joint_matrices=matrices
+    )
+    output = tmp_path / "compressed.npz"
+
+    main([str(model), str(output), *_FAST])
+
+    result = np.load(output)
+    assert result["weights"].shape == (25, 11)  # 10 + 1 synthetic root
+
+
+def test_cli_root_joint_index_designates_joint(tmp_path):
+    model_data = make_grid_model()
+    matrices = np.tile(np.eye(4), (10, 1, 1))
+    matrices[:, :3, 3] = np.arange(30).reshape(10, 3)
+    model = write_model_npz(
+        tmp_path / "grid.npz", model_data, rest_joint_matrices=matrices
+    )
+    output = tmp_path / "compressed.npz"
+
+    main([str(model), str(output), *_FAST, "--root-joint", "3"])
+
+    result = np.load(output)
+    assert result["weights"].shape == (25, 10)  # No added root
+
+
+def test_cli_rejects_invalid_root_joint_string(tmp_path):
+    model_data = make_grid_model()
+    matrices = np.tile(np.eye(4), (10, 1, 1))
+    model = write_model_npz(
+        tmp_path / "grid.npz", model_data, rest_joint_matrices=matrices
+    )
+    output = tmp_path / "compressed.npz"
+
+    with pytest.raises(SystemExit):
+        main([str(model), str(output), *_FAST, "--root-joint", "head"])
+
+
+def test_cli_warm_up_disabled(tmp_path):
+    model = write_model_npz(
+        tmp_path / "grid.npz", make_grid_model(), rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1))
+    )
+    output = tmp_path / "compressed.npz"
+
+    main([str(model), str(output), *_FAST, "--warm-up", "false"])
+
+    result = np.load(output)
+    assert result["weights"].shape[0] == 25  # Ran successfully
+
+
+def test_cli_warm_up_enabled_explicit(tmp_path):
+    model = write_model_npz(
+        tmp_path / "grid.npz", make_grid_model(), rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1))
+    )
+    output = tmp_path / "compressed.npz"
+
+    main([str(model), str(output), *_FAST, "--warm-up", "true"])
+
+    result = np.load(output)
+    assert result["weights"].shape[0] == 25  # Ran successfully

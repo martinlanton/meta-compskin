@@ -85,8 +85,8 @@ zeros" figure.
 `build_training_schedule`, or can be assigned directly for a hand-built
 schedule.
 
-With the default `iterations=10000` (a single int), the schedule is the
-classic two phases:
+With the default `iterations=10000` (a single int) and `warm_up_enabled=True`
+(the default), the schedule is the classic two phases:
 
 | Phase | Weight normalisation | Purpose |
 |-------|----------------------|---------|
@@ -96,13 +96,19 @@ classic two phases:
 Each phase runs `iterations` steps, so the total is twice the number you pass.
 The paper used 20 000 total; the default `iterations=10000` matches it.
 
+When `warm_up_enabled=False`, the unnormalised warm-up phase is skipped and only
+the normalised phase runs, taking the full `iterations` steps. This is useful
+for research experiments that measure the impact of the warm-up decay process
+in isolation.
+
 Passing `iterations` as a sequence instead — say `(5000, 5000, 10000)` — adds
 one stage per entry: the influence budget $K$ starts at $K \cdot 2^{N-1}$ ($N$
 being the number of stages) and halves each stage down to $K$, so the schedule
 runs $N + 1$ phases (the unnormalised warm-up plus one normalised phase per
-stage). Section 4.1's "HD" setting used $K = 32$ during the whole solve; this
-gives the solver that room to explore which joints matter *before* committing
-to the $K$ the runtime actually gets. See
+stage) when `warm_up_enabled=True`, or $N$ phases (all normalised) when
+`warm_up_enabled=False`. Section 4.1's "HD" setting used $K = 32$ during the
+whole solve; this gives the solver that room to explore which joints matter
+*before* committing to the $K$ the runtime actually gets. See
 [Compressing](../user_guide/compressing.md#annealing-the-influence-budget)
 for when this helps and how to set it.
 
@@ -167,6 +173,7 @@ tables are in millimetres). How to interpret them is in
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
 | `alpha` | per model, 10 or 50 | smoother, blurrier result | sharper, risk of noisy weights; lower for dense meshes |
 | `power` ($p$) | 2 | high values (12) minimise the *worst* error at the cost of smoothness; needs more capacity and many more iterations | |
+| `warm_up_enabled` | `True` | (not adjustable: boolean) | disables the unnormalised warm-up and runs only normalised phases; faster solve with slightly worse error; used in research to measure the impact of the warm-up separately from other solver components |
 
 The paper's "HD" experiment (200 joints, $K = 32$, no delta sparsity,
 $p = 12$, 500 000 iterations) shows the far end of this space: 50 times lower

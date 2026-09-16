@@ -436,6 +436,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not use rest_joint_matrices stored in the model file.",
     )
     parser.add_argument(
+        "--root-joint",
+        default=None,
+        help="Root influence designation: 'none', 'new', or an index",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the run matrix and exit without compressing anything.",
@@ -495,6 +500,10 @@ def main(argv: list[str] | None = None) -> Path:
         "init_weight": args.init_weight,
         "power": args.power,
     }
+    if args.root_joint is not None:
+        settings["root_joint"] = args.root_joint
+    if hasattr(args, "warm_up") and args.warm_up is not None:
+        settings["warm_up_enabled"] = args.warm_up
     if not args.ignore_joint_matrices:
         settings["rest_joint_matrices"] = _stored_joint_matrices(model_path)
 

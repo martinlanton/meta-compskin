@@ -71,10 +71,10 @@ class TestBuildTrainingSchedule:
 
         assert [p.max_influences for p in schedule] == [16, 16, 11, 8]
 
-    def test_start_influences_is_ignored_by_a_single_stage(self):
+    def test_start_influences_sets_the_warm_up_even_for_a_single_stage(self):
         schedule = build_training_schedule((10,), 8, 6000, start_influences=16)
 
-        assert [p.max_influences for p in schedule] == [8, 8]
+        assert self._phases(schedule) == [(10, 16, 6000, False), (10, 8, 6000, True)]
 
     def test_default_ceiling_matches_the_doubling_rule(self):
         implicit = build_training_schedule((10, 20, 30), 8, 6000)
@@ -93,3 +93,22 @@ class TestBuildTrainingSchedule:
     def test_rejects_a_stage_without_iterations(self):
         with pytest.raises(ValueError, match="iterations"):
             build_training_schedule((100, 0), 8, 6000)
+
+    def test_warm_up_disabled_omits_warm_up_phase(self):
+        schedule = build_training_schedule((10,), 8, 6000, warm_up_enabled=False)
+
+        assert len(schedule) == 1  # Only the stage, no warm-up
+        assert schedule[0].normalize_weights is True
+
+    def test_warm_up_enabled_includes_warm_up_phase(self):
+        schedule = build_training_schedule((10,), 8, 6000, warm_up_enabled=True)
+
+        assert len(schedule) == 2  # Warm-up + stage
+        assert schedule[0].normalize_weights is False
+        assert schedule[1].normalize_weights is True
+
+    def test_warm_up_disabled_with_annealing(self):
+        schedule = build_training_schedule((10, 20, 30), 8, 6000, warm_up_enabled=False)
+
+        assert len(schedule) == 3  # Only stages, no warm-up
+        assert all(phase.normalize_weights for phase in schedule)

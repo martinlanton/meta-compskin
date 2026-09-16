@@ -38,6 +38,10 @@ _DEFAULT_NUMBER_OF_BONES = 100  # P
 _DEFAULT_MAX_INFLUENCES = 8  # K
 _DEFAULT_SEED = 12345
 
+_ROOT_WEIGHT_FLOOR = 1e-6  # smallest weight the root influence can hold
+_ROOT_JOINT_NEW = "new"
+_ROOT_JOINT_NONE = "none"
+
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
     """Build a binary vertex adjacency matrix from polygon faces.
@@ -226,6 +230,7 @@ def build_training_schedule(
     max_influences: int,
     total_nnz_B_rt: int,  # noqa: N803 (matches SkinCompressor)
     start_influences: int | None = None,
+    warm_up_enabled: bool = True,
 ) -> tuple[TrainingPhase, ...]:
     """Builds the phases run() executes, one stage per entry of stage_iterations.
 
@@ -233,11 +238,12 @@ def build_training_schedule(
     ``start_influences`` and shrinks geometrically each stage down to
     ``max_influences`` in the last one; with the default ceiling of
     ``max_influences * 2 ** (N - 1)``, N being the number of stages, it simply
-    halves each stage. A single stage keeps ``max_influences`` throughout
-    whatever the ceiling. The delta budget is constant. The first stage is
-    preceded by a warm-up of the same length with weight normalisation off;
-    every stage itself runs normalised. One entry is the classic two-phase
-    schedule.
+    halves each stage. The warm-up runs at ``start_influences`` when given,
+    even for a single stage, so the top-K cut keeps every candidate while
+    ownership is decided. The delta budget is constant. When enabled, the
+    first stage is preceded by a warm-up of the same length with weight
+    normalisation off; every stage itself runs normalised. One entry is the
+    classic two-phase schedule.
 
     Args:
         stage_iterations: Steps per stage; non-empty.
@@ -246,9 +252,13 @@ def build_training_schedule(
         start_influences: Budget of the first stage; None doubles per stage.
             With a candidate-joint mask this is the mask width, the widest
             budget a vertex can use (see :func:`candidate_joint_mask`).
+        warm_up_enabled: Whether to include an unnormalised warm-up phase
+            before the first stage (default True). When False, only stages
+            run, all normalised.
 
     Returns:
-        ``len(stage_iterations) + 1`` phases.
+        ``len(stage_iterations) + 1`` phases if warm_up_enabled, else
+        ``len(stage_iterations)`` phases.
 
     Raises:
         ValueError: If ``stage_iterations`` is empty or an entry is below one,
@@ -267,9 +277,16 @@ def build_training_schedule(
         TrainingPhase(steps, budget, total_nnz_B_rt, normalize_weights=True)
         for steps, budget in zip(stage_iterations, budgets, strict=True)
     ]
+
+    if not warm_up_enabled:
+        return tuple(stages)
+
+    warm_up_budget = (
+        start_influences if start_influences is not None else stages[0].max_influences
+    )
     warm_up = TrainingPhase(
         stages[0].iterations,
-        stages[0].max_influences,
+        warm_up_budget,
         total_nnz_B_rt,
         normalize_weights=False,
     )
@@ -311,6 +328,55 @@ def _annealed_influence_budgets(
         round(max_influences * ratio ** ((n_stages - 1 - i) / (n_stages - 1)))
         for i in range(n_stages)
     ]
+
+
+def _resolve_root_joint(
+    requested: int | str | None, has_joint_matrices: bool, number_of_bones: int
+) -> tuple[int | None, int]:
+    """Turns the root_joint argument into (root index or None, bone count).
+
+    None means "new" with joint matrices and no root without; "new" appends
+    a synthetic root as the last bone; an index designates a supplied bone;
+    "none" turns the root off. Bools and out-of-range values raise.
+
+    Args:
+        requested: The constructor argument: None for the default, "new" to
+            append a synthetic root, "none" to disable, or an int index.
+        has_joint_matrices: Whether joint matrices are provided.
+        number_of_bones: P, the number of bones supplied (not counting a synthetic root).
+
+    Returns:
+        (root_index or None, actual_bone_count). For a synthetic root,
+        root_index is P and actual_bone_count is P + 1.
+
+    Raises:
+        ValueError: If requested is a bool, an out-of-range index, or an
+            unrecognized string.
+    """
+    if isinstance(requested, bool):
+        raise ValueError(f"root_joint must be an int, str or None, not {type(requested).__name__}")
+
+    if requested is None:
+        if has_joint_matrices:
+            return (number_of_bones, number_of_bones + 1)
+        return (None, number_of_bones)
+
+    if requested == _ROOT_JOINT_NEW:
+        return (number_of_bones, number_of_bones + 1)
+
+    if requested == _ROOT_JOINT_NONE:
+        return (None, number_of_bones)
+
+    if isinstance(requested, int):
+        if not 0 <= requested < number_of_bones:
+            raise ValueError(
+                f"root_joint={requested} out of range [0, {number_of_bones})"
+            )
+        return (requested, number_of_bones)
+
+    raise ValueError(
+        f"root_joint={requested!r} must be None, 'new', 'none', or an int in [0, {number_of_bones})"
+    )
 
 
 def _resolve_candidate_joints(
@@ -476,6 +542,8 @@ class SkinCompressor:
         power: int = 2,
         seed: int = _DEFAULT_SEED,
         candidate_joints_per_vertex: int | None = None,
+        root_joint: int | str | None = None,
+        warm_up_enabled: bool = True,
     ):
         """Initializes the SkinCompressor.
 
@@ -512,13 +580,25 @@ class SkinCompressor:
                 region around it. None picks ``min(2 * K, P - 1)``; 0 turns
                 the filter off. Must satisfy K <= M < P. Also the ceiling of
                 an annealed schedule. Not allowed without joint matrices.
+            root_joint: Designates a root influence, one joint whose transforms
+                are held at zero and whose weight can never be pruned, for
+                static or unexplainable vertices. None (default) means "new"
+                when joint matrices are given (a synthetic root appended as
+                bone P), else no root. "new" appends a synthetic root with an
+                identity rest transform (bone count becomes P + 1). "none"
+                disables the root. An int in [0, P) designates a supplied
+                joint as the root; the bone count stays P.
+            warm_up_enabled: Whether to include an unnormalised warm-up phase
+                before the first stage (default True). When False, only stages
+                run, all normalised. Used for E3 experiments.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
                 number_of_bones disagrees with the number of matrices given;
                 if iterations is an empty sequence or any entry is below one;
                 if candidate_joints_per_vertex is given without joint
-                matrices or lies outside K <= M < P.
+                matrices or lies outside K <= M < P; if root_joint is a bool,
+                an out-of-range int, or an unrecognized string.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -582,6 +662,15 @@ class SkinCompressor:
             self.number_of_bones = (
                 _DEFAULT_NUMBER_OF_BONES if number_of_bones is None else number_of_bones
             )
+
+        # Resolve root joint before candidate joints to pass the geodesic count
+        n_geodesic_joints = self.number_of_bones
+        self.root_joint, self.number_of_bones = _resolve_root_joint(
+            root_joint,
+            has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
+            number_of_bones=n_geodesic_joints,
+        )
+
         self.max_influences = max_influences  # number of weights per vertex
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
         self.init_weight = init_weight
@@ -590,7 +679,7 @@ class SkinCompressor:
             candidate_joints_per_vertex,
             has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
             max_influences=max_influences,
-            number_of_bones=self.number_of_bones,
+            number_of_bones=n_geodesic_joints,
         )
 
         self.stage_iterations = _as_stage_iterations(iterations)
@@ -599,6 +688,7 @@ class SkinCompressor:
             max_influences,
             total_nnz_B_rt,
             start_influences=self.candidate_joints_per_vertex,
+            warm_up_enabled=warm_up_enabled,
         )
 
         self.seed = seed
@@ -622,6 +712,7 @@ class SkinCompressor:
         self.L: torch.Tensor | None = None
         self.rest_pose: torch.Tensor | None = None
         self.candidate_mask: torch.Tensor | None = None
+        self.transform_mask: torch.Tensor | None = None
         self.optimizer: torch.optim.Adam | None = None
 
     def run(self, output_location: str | Path) -> None:
@@ -740,6 +831,12 @@ class SkinCompressor:
             .to(self.device)
         )
         self.candidate_mask = self._build_candidate_mask()
+        self.transform_mask = self._build_transform_mask()
+
+        # Apply transform mask to B_rt initialization
+        if self.transform_mask is not None:
+            B_rt.data *= self.transform_mask
+
         # W PxN (numBones x numVertices) weights one per vertex per bone
         W = (
             (1e-8 * torch.randn(self.number_of_bones, N))
@@ -749,6 +846,8 @@ class SkinCompressor:
         )
         if self.candidate_mask is not None:
             W *= self.candidate_mask
+        if self.root_joint is not None:
+            W[self.root_joint] = _ROOT_WEIGHT_FLOOR
         W.requires_grad_()
 
         for index, phase in enumerate(self.schedule, start=1):
@@ -759,7 +858,8 @@ class SkinCompressor:
             )
             self.train(B_rt=B_rt, TR=TR, A=A, W=W, phase=phase)
 
-        Wn = W / W.sum(dim=0)
+        Wn = self._final_weights(W)
+        self._validate_weights(Wn)
         print(Wn.min().item(), Wn.max().item())
         BX, B, _ = self.compBX(
             Wn, B_rt, TR, self.model_data.n_blendshapes, self.number_of_bones
@@ -780,14 +880,11 @@ class SkinCompressor:
         )
         if self.rest_joint_matrices_3x4 is not None:
             self._report_joint_coverage(Wn)
+        if self.root_joint is not None:
+            self._report_root_usage(Wn, A)
 
         shapeXforms = B.detach().cpu().numpy()
-
-        # Use provided joint matrices or default to identity
-        if self.rest_joint_matrices_3x4 is not None:
-            rest_xform = self.rest_joint_matrices_3x4
-        else:
-            rest_xform = np.array([np.eye(3, 4)] * self.number_of_bones)
+        rest_xform = self._rest_transforms_for_output()
 
         np.savez(
             output_location,
@@ -821,11 +918,44 @@ class SkinCompressor:
                     f"6*S*P={n_coefficients}"
                 )
 
-    def _build_candidate_mask(self) -> torch.Tensor | None:
-        """Builds the (P, N) mask of joints allowed to weight each vertex.
+    def _build_transform_mask(self) -> torch.Tensor | None:
+        """Builds the (1, 1, P, 1, 1) mask to zero the root's transform block.
 
         Returns:
-            Boolean tensor on self.device, or None when there is no filter.
+            Boolean tensor with shape (1, 1, P', 1, 1), all true except the root
+            row which is false. Returns None when there is no root.
+        """
+        if self.root_joint is None:
+            return None
+        mask = torch.ones(1, 1, self.number_of_bones, 1, 1, dtype=torch.bool, device=self.device)
+        mask[0, 0, self.root_joint, 0, 0] = False
+        return mask
+
+    def _rest_transforms_for_output(self) -> np.ndarray:
+        """Returns the (P', 3, 4) rest transforms for the output.
+
+        Appends an identity row for a synthetic root, or uses the caller's
+        matrices, or creates identities without matrices.
+
+        Returns:
+            Array of shape (P', 3, 4) where P' may be one larger than P.
+        """
+        if self.rest_joint_matrices_3x4 is not None:
+            matrices = self.rest_joint_matrices_3x4.copy()
+        else:
+            matrices = np.eye(3, 4)[np.newaxis, :, :].repeat(self.number_of_bones - (1 if self.root_joint is not None else 0), axis=0)
+
+        if self.root_joint is not None and self.root_joint == (self.number_of_bones - 1):
+            identity_row = np.eye(3, 4)[np.newaxis, :, :]
+            matrices = np.vstack([matrices, identity_row])
+        return matrices.astype(np.float32)
+
+    def _build_candidate_mask(self) -> torch.Tensor | None:
+        """Builds the (P', N) mask of joints allowed to weight each vertex.
+
+        Returns:
+            Boolean tensor on self.device with shape (P', N) where P' includes
+            the synthetic root if present. Returns None when there is no filter.
 
         Raises:
             RuntimeError: If a filter is set but no joint matrices are held.
@@ -840,16 +970,22 @@ class SkinCompressor:
             self.rest_joint_matrices_3x4[:, :3, 3],
         )
         mask = candidate_joint_mask(distances, self.candidate_joints_per_vertex)
-        return torch.from_numpy(mask).to(self.device)
+        mask_tensor = torch.from_numpy(mask).to(self.device)
 
-    @staticmethod
-    def _report_joint_coverage(Wn: torch.Tensor) -> None:  # noqa: N803
+        # Add root row (all true) only for synthetic root
+        if self.root_joint is not None and self.root_joint == self.number_of_bones - 1:
+            n_verts = mask.shape[1]
+            root_row = torch.ones(1, n_verts, dtype=torch.bool, device=self.device)
+            mask_tensor = torch.cat([mask_tensor, root_row], dim=0)
+        return mask_tensor
+
+    def _report_joint_coverage(self, Wn: torch.Tensor) -> None:  # noqa: N803
         """Prints how many vertices each joint drives and lists idle joints.
 
         Args:
-            Wn: Normalised weights, shape (P, N).
+            Wn: Normalised weights, shape (P', N).
         """
-        vertices_per_joint = (Wn > 0).sum(dim=1)  # (P,)
+        vertices_per_joint = (Wn > 0).sum(dim=1)  # (P',)
         print(
             "vertices per joint: "
             f"min {vertices_per_joint.min().item()} "
@@ -857,8 +993,40 @@ class SkinCompressor:
             f"max {vertices_per_joint.max().item()}"
         )
         idle = torch.nonzero(vertices_per_joint == 0).flatten().tolist()
+
+        # Skip root from idle list
+        if self.root_joint is not None and self.root_joint in idle:
+            idle.remove(self.root_joint)
+
         if idle:
             print(f"joints driving no vertex: {idle}")
+
+    def _report_root_usage(self, Wn: torch.Tensor, A: torch.Tensor) -> None:
+        """Reports how many vertices depend entirely or partially on the root.
+
+        Args:
+            Wn: Normalised weights, shape (P', N).
+            A: Target blendshape matrix, shape (3S, N).
+        """
+        if self.root_joint is None:
+            return
+
+        root_weights = Wn[self.root_joint]
+        full_root = (root_weights == 1.0).sum().item()
+        partial_root = ((root_weights > 0) & (root_weights < 1.0)).sum().item()
+
+        # Find largest delta for vertices on root
+        if full_root > 0:
+            root_verts = torch.nonzero(root_weights == 1.0).flatten()
+            A_root_verts = A[:, root_verts]
+            largest_delta = A_root_verts.abs().max().item()
+        else:
+            largest_delta = 0.0
+
+        print(
+            f"vertices on the root: {full_root} full, {partial_root} partial, "
+            f"largest delta on root {largest_delta:.5e}"
+        )
 
     def get_matrix_for_optimization(self) -> torch.Tensor:
         """Constructs target matrix A ∈ ℝ^(3S×N) from blendshape deltas (Equation 3).
@@ -1087,21 +1255,8 @@ class SkinCompressor:
             self.optimizer.step()
 
             with torch.no_grad():
-                if self.candidate_mask is not None:
-                    W *= self.candidate_mask
-                W_cutoff = torch.topk(W, phase.max_influences + 1, dim=0).values[-1, :]
-                W_mask = W_cutoff < W
-                W_pruned = W_mask * W
-                W.copy_(W_pruned)
-                W.clamp_(min=0)
-
-                B_decider = B_rt.abs()
-                B_cutoff = torch.topk(B_decider.flatten(), phase.total_nnz_B_rt).values[
-                    -1
-                ]
-                B_mask = B_decider >= B_cutoff
-                B_pruned = B_mask * B_rt
-                B_rt.copy_(B_pruned)
+                self._project_weights(W, phase)
+                self._project_transforms(B_rt, phase)
 
             if i % 200 == 0:
                 B_X, _, _ = self.compBX(
@@ -1112,13 +1267,79 @@ class SkinCompressor:
                 if self.device == "cuda":
                     torch.cuda.synchronize()
 
+                empty_cols = (W.sum(dim=0) == 0).sum().item()
                 print(
-                    f"{i:05d}({time.time() - st:.3f}) {loss.item():.5e} {trunc_err:.5e} {(B_rt.abs() > _SPARSITY_THRESHOLD).count_nonzero().item()} {(W.abs() > _SPARSITY_THRESHOLD).count_nonzero().item()}"
+                    f"{i:05d}({time.time() - st:.3f}) {loss.item():.5e} {trunc_err:.5e} {(B_rt.abs() > _SPARSITY_THRESHOLD).count_nonzero().item()} {(W.abs() > _SPARSITY_THRESHOLD).count_nonzero().item()} {empty_cols}"
                 )
                 self.loss_list.append(loss.item())
                 self.abserr_list.append(trunc_err)
 
                 st = time.time()
+
+    def _project_weights(self, W: torch.Tensor, phase: TrainingPhase) -> None:
+        """Applies the mask, the top-K cut, the sign clamp and the root floor in place.
+
+        Args:
+            W: Bone weights, shape (P', N).
+            phase: The TrainingPhase defining the influence budget.
+        """
+        if self.candidate_mask is not None:
+            W *= self.candidate_mask
+        cutoff = torch.topk(W, phase.max_influences + 1, dim=0).values[-1, :]
+        W.copy_((cutoff < W) * W)
+        W.clamp_(min=0)
+        if self.root_joint is not None:
+            W[self.root_joint].clamp_(min=_ROOT_WEIGHT_FLOOR)
+
+    def _project_transforms(self, B_rt: torch.Tensor, phase: TrainingPhase) -> None:
+        """Zeroes the root's block and keeps the L largest coefficients in place.
+
+        Args:
+            B_rt: Transformation matrices, shape (6, S, P', 1, 1).
+            phase: The TrainingPhase defining the delta budget.
+        """
+        if self.transform_mask is not None:
+            B_rt *= self.transform_mask
+        decider = B_rt.abs()
+        cutoff = torch.topk(decider.flatten(), phase.total_nnz_B_rt).values[-1]
+        B_rt.copy_((decider >= cutoff) * B_rt)
+
+    def _final_weights(self, W: torch.Tensor) -> torch.Tensor:
+        """Normalises the weights, dropping floor-level root entries first.
+
+        Args:
+            W: Raw weights, shape (P', N).
+
+        Returns:
+            Normalised weights where each column sums to one. Floor-level root
+            entries beside other non-zero weights are zeroed before normalisation.
+        """
+        W = W.detach().clone()
+        if self.root_joint is not None:
+            others_alive = (W.sum(dim=0) - W[self.root_joint]) > 0
+            at_floor = W[self.root_joint] <= _ROOT_WEIGHT_FLOOR
+            W[self.root_joint, at_floor & others_alive] = 0
+        return W / W.sum(dim=0)
+
+    def _validate_weights(self, Wn: torch.Tensor) -> None:
+        """Raises RuntimeError unless Wn is finite, non-negative, normalised and K-sparse.
+
+        Args:
+            Wn: Normalised weights, shape (P', N).
+
+        Raises:
+            RuntimeError: If any check fails.
+        """
+        if not torch.isfinite(Wn).all():
+            raise RuntimeError("weights contain NaN or Inf")
+        if (Wn < 0).any():
+            raise RuntimeError("weights are negative")
+        col_sums = Wn.sum(dim=0)
+        if not torch.allclose(col_sums, torch.ones_like(col_sums), atol=1e-5):
+            raise RuntimeError("weights do not sum to one per vertex")
+        n_nonzero = (Wn > 0).sum(dim=0)
+        if (n_nonzero > self.max_influences).any():
+            raise RuntimeError(f"weights exceed max_influences={self.max_influences}")
 
     def compBX(
         self,
