@@ -61,6 +61,26 @@ The bit-exact tests compare against files under `tests/test_data/`:
   positions, generated on that platform. `SETUP.md` in each folder records the
   environment.
 
+## End-to-end tests
+
+`tests/test_end_to_end_compression.py` and `tests/test_end_to_end_maya.py`
+run the whole workflow on the `proteus` head (23 735 vertices, 287 shapes):
+
+- **Compression** (any platform): a short run, checked against error bounds
+  rather than exact values.
+- **Maya** (skipped without mayapy): the head is built with a blendShape node,
+  `compress_and_build_rig` exports, compresses and rigs it, and the scene is
+  saved to `output/end_to_end/proteus_rig.mb`. In that scene the original
+  head, offset in X, plays each blendshape on the same frame as the rig, so
+  you can scrub the timeline and compare the two.
+
+Both are marked `end_to_end` and CI skips them (`-m "not end_to_end"`), so
+run them locally before merging changes to the solver or the Maya tools.
+Both default to 600 iterations per phase; set `COMPSKIN_E2E_ITERATIONS` for a
+longer, cleaner compression. The modules get the head only through the
+`head_model` and `head_shape_names` fixtures in `conftest.py`, so they run
+unchanged on another model.
+
 If a deliberate change to the solver alters the output, regenerate the
 expected files on the same platform they were created on, and say so in the
 commit message. Do not loosen tolerances to make a regression pass.
