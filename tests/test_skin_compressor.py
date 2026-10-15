@@ -2,7 +2,9 @@
 
 import numpy as np
 import pytest
+import torch
 
+from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
     SkinCompressor,
     TrainingPhase,
@@ -157,7 +159,6 @@ class TestIntegration:
         static_deltas[:, 22:, :] = 0  # Last 3 vertices are static
 
         # Build model with zero alpha for the static region
-        from metacompskin.model_data import BlendshapeModelData
         static_model = BlendshapeModelData(
             model_name=model_data.model_name,
             deltas=static_deltas,
@@ -184,7 +185,9 @@ class TestIntegration:
 
         # Check static vertices are on root (last row)
         static_verts_weights = weights[22:, :]
-        assert (static_verts_weights[:, -1] == 1.0).all(), "Static vertices should have weight 1.0 on root"
+        assert (static_verts_weights[:, -1] == 1.0).all(), (
+            "Static vertices should have weight 1.0 on root"
+        )
 
     def test_without_root_run_fails_on_static_region(self, grid_model_data, tmp_path):
         """Verifies that without root, a static region causes NaN/validation error.
@@ -199,7 +202,6 @@ class TestIntegration:
         static_deltas = model_data.deltas.copy()
         static_deltas[:, 22:, :] = 0  # Last 3 vertices are static
 
-        from metacompskin.model_data import BlendshapeModelData
         static_model = BlendshapeModelData(
             model_name=model_data.model_name,
             deltas=static_deltas,
@@ -227,8 +229,6 @@ class TestIntegration:
 
 class TestProjections:
     def test_project_weights_keeps_top_k_and_no_negatives(self, grid_model_data):
-        import torch
-
         compressor = SkinCompressor(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(10),
@@ -244,8 +244,6 @@ class TestProjections:
         assert (W != 0).sum(dim=0).max() <= 3  # max_influences + root
 
     def test_project_transforms_keeps_exactly_l_largest(self, grid_model_data):
-        import torch
-
         compressor = SkinCompressor(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(10),
@@ -298,7 +296,9 @@ class TestSkinCompressorSettings:
             rest_joint_matrices=_identity_joint_matrices(7),
         )
 
-        assert compressor.number_of_bones == 8  # 7 supplied + 1 synthetic root by default
+        assert (
+            compressor.number_of_bones == 8
+        )  # 7 supplied + 1 synthetic root by default
 
     def test_number_of_bones_follows_the_rest_joint_matrices_without_root(
         self, grid_model_data
@@ -320,7 +320,9 @@ class TestSkinCompressorSettings:
             number_of_bones=7,
         )
 
-        assert compressor.number_of_bones == 8  # 7 supplied + 1 synthetic root by default
+        assert (
+            compressor.number_of_bones == 8
+        )  # 7 supplied + 1 synthetic root by default
 
     def test_number_of_bones_conflicting_with_rest_joint_matrices_is_rejected(
         self, grid_model_data
