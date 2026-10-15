@@ -26,7 +26,7 @@ from metacompskin.animation_generator import AnimationFrameGenerator
 from metacompskin.model_data import BlendshapeModelData
 
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
-N_BONES = 40  # the paper's setting for its test rigs (Table 1)
+N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
 MAX_INFLUENCES = 8  # K, SkinCompressor default
 MEAN_ERROR_RATIO = 0.5  # see test_end_to_end_compression.py
 MAX_ERROR_RATIO = 0.6

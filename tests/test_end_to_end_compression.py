@@ -17,10 +17,10 @@ import pytest
 from metacompskin.model_fit import SkinCompressor
 
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
-N_BONES = 40  # the paper's setting for its test rigs (Table 1)
+N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
 MAX_INFLUENCES = 8  # K, SkinCompressor default
 # Fraction of the zero-motion error (predicting no deltas at all) the
-# compression must stay under; 600 iterations reach roughly 0.35 on proteus.
+# compression must stay under; 600 iterations reach roughly 0.3 on proteus.
 MEAN_ERROR_RATIO = 0.5
 MAX_ERROR_RATIO = 0.6
 
