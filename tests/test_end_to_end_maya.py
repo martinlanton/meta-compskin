@@ -24,6 +24,9 @@ import metacompskin
 from metacompskin.animation_generator import AnimationFrameGenerator
 from metacompskin.model_data import BlendshapeModelData
 
+# Long on CPU for a large head; deselect with -m "not end_to_end".
+pytestmark = pytest.mark.end_to_end
+
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
 N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
 MAX_INFLUENCES = 8  # K, SkinCompressor default

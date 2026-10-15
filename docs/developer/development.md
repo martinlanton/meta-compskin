@@ -74,6 +74,8 @@ run the whole workflow on the `proteus` head (23 735 vertices, 287 shapes):
   head, offset in X, plays each blendshape on the same frame as the rig, so
   you can scrub the timeline and compare the two.
 
+Both are marked `end_to_end` and CI skips them (`-m "not end_to_end"`), so
+run them locally before merging changes to the solver or the Maya tools.
 Both default to 600 iterations per phase; set `COMPSKIN_E2E_ITERATIONS` for a
 longer, cleaner compression. The modules get the head only through the
 `head_model` and `head_shape_names` fixtures in `conftest.py`, so they run
