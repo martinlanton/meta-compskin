@@ -72,6 +72,22 @@ the paper used.
 Shape coefficients can be negative or exceed 1; the sum handles it the same
 way blendshapes do. Do not clamp them unless the rig did.
 
+### Files solved with a joint hierarchy
+
+Such a file also holds `jointParents` and `localShapeXform` (see
+[Data formats](../concepts/data_formats.md)). `shapeXform` is still the complete
+motion of every joint, so the sums above work unchanged. A runtime that wants
+the hierarchy's sparsity can run the same sparse sum over `localShapeXform`
+instead, then add each joint's ancestors in one pass down the tree:
+
+```
+E[a] = sum over active shapes k of c[k] * D_ka     # sparse, as above
+for j in joints, parents before children:
+    M[j] = identity_3x4 + E[j] + (M[parent(j)] - identity_3x4 if parent(j) >= 0 else 0)
+```
+
+That is $P$ additions of $3 \times 4$ blocks per frame on top of the sparse sum.
+
 ## Coordinate conventions
 
 **Column vectors.** Every matrix in the file is column-vector convention:

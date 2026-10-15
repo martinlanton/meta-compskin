@@ -70,7 +70,9 @@ rest mesh; the exporter names the offending mesh otherwise.
 
 If you want the output's joints to line up with real joints in your rig, pass
 their names. Their world matrices are written under `rest_joint_matrices`,
-already transposed into the package's column-vector convention.
+already transposed into the package's column-vector convention, and their
+hierarchy under `joint_parents`: each joint's nearest ancestor among the joints
+you passed, skipping offset groups and joints you left out.
 
 ```python
 MayaBlendshapeExporter(
@@ -84,15 +86,20 @@ Two things to know before doing this:
 - The number of joints you pass becomes the number of virtual joints $P$. The
   solver needs at least `max_influences + 1` of them, 9 by default, and works
   best with several dozen.
-- Joint placement does **not** affect the solve. The rest matrices are echoed
-  into the output for rig builders; the deltas are solved as if every joint
-  were at the origin. See [Data formats](../concepts/data_formats.md).
+- Joint placement shapes the solve: each joint only drives the skin near it
+  (see [Compressing](compressing.md#custom-joints)). The rest matrices are also
+  echoed into the output for rig builders. See
+  [Data formats](../concepts/data_formats.md).
+- Pass the joints in any order; the hierarchy is read from the scene. If the
+  facial joints are siblings under one head joint (a flat setup), every
+  `joint_parents` entry is -1 and the result is the same as without it.
 
 ### What the exporter writes
 
 `deltas`, `rest_verts`, `rest_faces`, empty `inbetween_info` and
 `combination_info`, `shape_names` (the blendShape target aliases or the target
-mesh names, in order), and `rest_joint_matrices` when joints were given. The
+mesh names, in order), and `rest_joint_matrices` and `joint_parents` when joints
+were given. The
 file loads with `BlendshapeModelData.from_npz` on any machine.
 
 ## Option 2: OBJ files through Maya's importer

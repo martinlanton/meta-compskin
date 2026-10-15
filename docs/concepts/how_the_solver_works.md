@@ -65,6 +65,14 @@ onto the feasible set. This is the "proximal" part of the method:
    Unlike the weights, the budget is global: the solver decides freely which
    shapes and joints deserve non-zeros.
 
+With a joint hierarchy (`joint_parents`), the coefficients the solver
+optimises, and projection 4 counts, are each joint's *own* delta (taken about
+the mesh centre, or about the joint's rest position with
+`deltas_about_joints`). A joint's transform $\mathbf{N}_{k,j}$ is the sum of
+its own delta and its ancestors', so motion shared by a region is paid for once
+on the parent. This is a fixed, invertible linear change of variables: the set
+of reachable results is the same, only what the budget counts changes.
+
 Projection 4 is what distinguishes this method from earlier skinning
 decompositions. Because it runs from the first iteration, the solver adapts
 the weights to a sparse set of deltas rather than being handed a dense
