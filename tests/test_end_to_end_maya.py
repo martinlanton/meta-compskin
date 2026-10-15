@@ -7,9 +7,8 @@ to ``output/end_to_end/<model>_rig.mb`` for viewing: the original head, offset
 in X, plays each blendshape on the same frame as the rig (frame 0 neutral,
 frame k + 1 shape k), so the two can be scrubbed side by side.
 
-This module is kept identical in meta-compskin and
-meta-compskin_private_tests so the two heads are tested the same way. Skipped
-when no mayapy is found. Set ``COMPSKIN_E2E_ITERATIONS`` for a longer, cleaner
+The module only knows the head through that fixture, so it runs unchanged on
+any model. Skipped when no mayapy is found. Set ``COMPSKIN_E2E_ITERATIONS`` for a longer, cleaner
 compression (default 600 per phase).
 """
 

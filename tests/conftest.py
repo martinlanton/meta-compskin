@@ -136,9 +136,8 @@ def mayapy_path() -> Path | None:
     return Path(MAYAPY) if MAYAPY else None
 
 
-# The end-to-end suites (test_end_to_end_*.py) are kept identical in this
-# repository and meta-compskin_private_tests; each repository's conftest
-# supplies its own head through these two fixtures.
+# The end-to-end suites (test_end_to_end_*.py) get their head only through
+# these two fixtures, so pointing them at another model reruns the suites on it.
 HEAD_MODEL = Path(__file__).parent / "test_data" / "source_models" / "proteus.npz"
 
 

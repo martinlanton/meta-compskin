@@ -75,11 +75,9 @@ run the whole workflow on the `proteus` head (23 735 vertices, 287 shapes):
   you can scrub the timeline and compare the two.
 
 Both default to 600 iterations per phase; set `COMPSKIN_E2E_ITERATIONS` for a
-longer, cleaner compression. The two modules and
-`tests/maya_scripts/end_to_end_rig_in_maya.py` are kept identical in the
-private test repository, whose conftest supplies a different head through the
-same `head_model` and `head_shape_names` fixtures, so results can be compared
-across the two.
+longer, cleaner compression. The modules get the head only through the
+`head_model` and `head_shape_names` fixtures in `conftest.py`, so they run
+unchanged on another model.
 
 If a deliberate change to the solver alters the output, regenerate the
 expected files on the same platform they were created on, and say so in the

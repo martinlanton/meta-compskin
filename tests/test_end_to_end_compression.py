@@ -4,9 +4,9 @@ Compresses the head supplied by the ``head_model`` fixture (see conftest.py)
 and checks invariants and error bounds rather than exact floats, so it holds
 on every platform. test_end_to_end_maya.py turns the same head into a Maya rig.
 
-This module is kept identical in meta-compskin and
-meta-compskin_private_tests so the two heads are tested the same way. Set
-``COMPSKIN_E2E_ITERATIONS`` for a longer run (default 600 per phase).
+The module only knows the head through that fixture, so it runs unchanged on
+any model. Set ``COMPSKIN_E2E_ITERATIONS`` for a longer run (default 600 per
+phase).
 """
 
 import os

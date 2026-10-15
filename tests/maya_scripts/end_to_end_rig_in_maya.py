@@ -12,9 +12,6 @@ target per shape, then ``compress_and_build_rig`` exports, compresses and
 builds the skinned duplicate. The original blendShape is then keyed on the
 same timeline as the rig (frame 0 neutral, frame k + 1 shape k), so scrubbing
 the saved scene shows the original and the compressed head side by side.
-
-This file is kept identical in meta-compskin and meta-compskin_private_tests
-so the two suites build their rigs the same way.
 """
 
 import re
