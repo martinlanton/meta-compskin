@@ -354,9 +354,7 @@ def _resolve_root_joint(
             unrecognized string.
     """
     if isinstance(requested, bool):
-        raise ValueError(
-            f"root_joint must be an int, str or None, not {type(requested).__name__}"
-        )
+        raise ValueError(f"root_joint must be an int, str or None, not {type(requested).__name__}")
 
     if requested is None:
         if has_joint_matrices:
@@ -929,9 +927,7 @@ class SkinCompressor:
         """
         if self.root_joint is None:
             return None
-        mask = torch.ones(
-            1, 1, self.number_of_bones, 1, 1, dtype=torch.bool, device=self.device
-        )
+        mask = torch.ones(1, 1, self.number_of_bones, 1, 1, dtype=torch.bool, device=self.device)
         mask[0, 0, self.root_joint, 0, 0] = False
         return mask
 
@@ -947,13 +943,9 @@ class SkinCompressor:
         if self.rest_joint_matrices_3x4 is not None:
             matrices = self.rest_joint_matrices_3x4.copy()
         else:
-            matrices = np.eye(3, 4)[np.newaxis, :, :].repeat(
-                self.number_of_bones - (1 if self.root_joint is not None else 0), axis=0
-            )
+            matrices = np.eye(3, 4)[np.newaxis, :, :].repeat(self.number_of_bones - (1 if self.root_joint is not None else 0), axis=0)
 
-        if self.root_joint is not None and self.root_joint == (
-            self.number_of_bones - 1
-        ):
+        if self.root_joint is not None and self.root_joint == (self.number_of_bones - 1):
             identity_row = np.eye(3, 4)[np.newaxis, :, :]
             matrices = np.vstack([matrices, identity_row])
         return matrices.astype(np.float32)

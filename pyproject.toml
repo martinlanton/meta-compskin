@@ -172,9 +172,6 @@ addopts = [
     "--cov-report=html",
     "--cov-report=xml",
 ]
-markers = [
-    "end_to_end: whole-workflow tests on a full head; long on CPU, not run in CI",
-]
 testpaths = ["tests"]
 pythonpath = ["src", "scripts"]
 python_files = ["test_*.py"]

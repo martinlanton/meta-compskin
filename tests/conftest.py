@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from metacompskin.maya_rig_builder import default_shape_names
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import SkinCompressor
 
@@ -128,29 +127,6 @@ MAYAPY = find_mayapy()
 requires_mayapy = pytest.mark.skipif(
     MAYAPY is None, reason="mayapy not found (set MAYAPY to run the Maya tests)"
 )
-
-
-@pytest.fixture(scope="session")
-def mayapy_path() -> Path | None:
-    """The mayapy interpreter, or None when Maya is not installed."""
-    return Path(MAYAPY) if MAYAPY else None
-
-
-# The end-to-end suites (test_end_to_end_*.py) get their head only through
-# these two fixtures, so pointing them at another model reruns the suites on it.
-HEAD_MODEL = Path(__file__).parent / "test_data" / "source_models" / "proteus.npz"
-
-
-@pytest.fixture(scope="session")
-def head_model() -> BlendshapeModelData:
-    """The end-to-end head: proteus, 23 735 vertices and 287 shapes."""
-    return BlendshapeModelData.from_npz(str(HEAD_MODEL))
-
-
-@pytest.fixture(scope="session")
-def head_shape_names(head_model) -> list[str]:
-    """Names of the end-to-end head's shapes, in delta order."""
-    return default_shape_names(head_model.n_blendshapes)
 
 
 @pytest.fixture(scope="session")

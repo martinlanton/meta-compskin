@@ -54,7 +54,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=metacompskin --cov-report=term -m "not end_to_end"
+          pytest --cov=metacompskin --cov-report=term
 
   docs:
     name: Build Documentation

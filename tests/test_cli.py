@@ -219,9 +219,7 @@ def test_cli_rejects_invalid_root_joint_string(tmp_path):
 
 def test_cli_warm_up_disabled(tmp_path):
     model = write_model_npz(
-        tmp_path / "grid.npz",
-        make_grid_model(),
-        rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1)),
+        tmp_path / "grid.npz", make_grid_model(), rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1))
     )
     output = tmp_path / "compressed.npz"
 
@@ -233,9 +231,7 @@ def test_cli_warm_up_disabled(tmp_path):
 
 def test_cli_warm_up_enabled_explicit(tmp_path):
     model = write_model_npz(
-        tmp_path / "grid.npz",
-        make_grid_model(),
-        rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1)),
+        tmp_path / "grid.npz", make_grid_model(), rest_joint_matrices=np.tile(np.eye(4), (10, 1, 1))
     )
     output = tmp_path / "compressed.npz"
 
