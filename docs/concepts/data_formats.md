@@ -28,6 +28,7 @@ by you (see [Preparing data](../user_guide/preparing_data.md)).
 | `combination_info` | 0-d object | dict | yes (may be `{}`) | Rig-logic metadata for corrective shapes. Same remark. |
 | `shape_names` | `(S,)` | str | no | Target names, aligned with the first axis of `deltas`. Written by the exporter; not read by the compressor but essential downstream. |
 | `rest_joint_matrices` | `(P, 4, 4)` | float64 | no | World-space rest matrices of real joints, translation in the last column. Written by the exporter when `joints` is given. Pass to `SkinCompressor(rest_joint_matrices=...)`. |
+| `joint_parents` | `(P,)` | int64 | no | For each joint in `rest_joint_matrices`, the index of its parent, or -1 for none. Written by the exporter when `joints` is given (the nearest exported ancestor in the Maya hierarchy). Pass to `SkinCompressor(joint_parents=...)`; the command line uses it automatically. |
 
 Loading validates that the shapes agree ($N$ consistent across the three
 arrays, faces homogeneous, indices in range) and raises `ValueError` with a
@@ -63,7 +64,9 @@ builders, and by engine importers.
 | `quads` | `(F, 3)` or `(F, 4)` | int32 | `rest_faces`, copied through so the file is self-contained. |
 | `weights` | `(N, P)` | float32 | Skin weights. Row $i$ is vertex $i$, column $j$ is joint $j$. Non-negative, each row sums to 1, at most $K$ non-zero per row. |
 | `restXform` | `(P, 3, 4)` | float32 or float64 | Rest transform of each joint: the first three rows of the `rest_joint_matrices` you passed in, or $3 \times 4$ identities. **Not used by the maths**; carried for rig builders that want to place joints. |
-| `shapeXform` | `(3S, 4P)` | float32 | The matrix $\mathbf{B}$. Block $(k, j)$, rows `3k:3k+3`, columns `4j:4j+4`, is the delta transform $\mathbf{N}_{k,j}$ for shape $k$ and joint $j$. About 90% of blocks are exactly zero. |
+| `shapeXform` | `(3S, 4P)` | float32 | The matrix $\mathbf{B}$. Block $(k, j)$, rows `3k:3k+3`, columns `4j:4j+4`, is the delta transform $\mathbf{N}_{k,j}$ for shape $k$ and joint $j$. About 90% of blocks are exactly zero (fewer when a joint hierarchy was solved, since a child's block includes its parent's motion). |
+| `jointParents` | `(P,)` | int64 | Only when a joint hierarchy was solved. Parent of each joint, -1 for none; the root influence, if any, has no parent. |
+| `localShapeXform` | `(3S, 4P)` | float32 | Only when a joint hierarchy was solved. Same layout as `shapeXform`, holding each joint's own delta $\mathbf{D}_{k,j}$, the part it adds to its parent's motion. Summing a joint's block with its ancestors' gives its `shapeXform` block exactly (`metacompskin.model_fit.accumulate_joint_transforms`). Sparse in the same way `shapeXform` is without a hierarchy. |
 
 There is no `shape_names` key in the output. Keep the input file, or write
 the names alongside (the private test scripts write a `shape_names.json`

@@ -39,6 +39,7 @@ Example:
         SkinCompressor(model_data=model_data).run("D:/exports/head_compressed.npz")
 """
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,31 @@ def _import_maya() -> tuple[Any, Any]:
     return cmds, OpenMaya
 
 
+def nearest_listed_ancestors(
+    joints: Sequence[str], parent_of: Callable[[str], str | None]
+) -> list[int]:
+    """Maps each joint to its nearest ancestor that is also in ``joints``.
+
+    Intermediate nodes that are not listed (offset groups, joints left out of
+    the export) are skipped, so the hierarchy only links exported joints.
+
+    Args:
+        joints: Node names, in export order.
+        parent_of: Returns a node's parent name, or None at the top of the scene.
+
+    Returns:
+        For each joint, the index of its nearest listed ancestor, or -1.
+    """
+    index = {name: position for position, name in enumerate(joints)}
+    parents = []
+    for joint in joints:
+        ancestor = parent_of(joint)
+        while ancestor is not None and ancestor not in index:
+            ancestor = parent_of(ancestor)
+        parents.append(-1 if ancestor is None else index[ancestor])
+    return parents
+
+
 class MayaBlendshapeExporter:
     """Exports blendshape model data from the current Maya scene to an NPZ file.
 
@@ -81,6 +107,9 @@ class MayaBlendshapeExporter:
       ``joints`` is provided). Suitable for ``SkinCompressor``'s
       ``rest_joint_matrices`` argument; translation is stored in the last
       column (the matrices are transposed from Maya's row-vector convention).
+    - ``joint_parents``: for each exported joint, the index of its nearest
+      ancestor among the exported joints, or -1 (only when ``joints`` is
+      provided). Suitable for ``SkinCompressor``'s ``joint_parents`` argument.
 
     Points are read in object space, so targets that have been translated
     aside for layout in the scene still produce correct deltas.
@@ -176,6 +205,9 @@ class MayaBlendshapeExporter:
         }
         if self.joints:
             data["rest_joint_matrices"] = self._joint_matrices(self.joints)
+            data["joint_parents"] = np.array(
+                self._joint_parents(self.joints), dtype=np.int64
+            )
 
         output_path = Path(output_path)
         if output_path.suffix != ".npz":
@@ -399,6 +431,23 @@ class MayaBlendshapeExporter:
             shape_names.append(target.split("|")[-1].split(":")[-1])
 
         return rest_verts, shape_names, deltas
+
+    def _joint_parents(self, joints: list[str]) -> list[int]:
+        """Finds each joint's nearest ancestor among the exported joints.
+
+        Args:
+            joints: Joint (or transform) node names, all existing.
+
+        Returns:
+            Index into ``joints`` of each joint's parent, -1 for none.
+        """
+        long_names = [self._cmds.ls(joint, long=True)[0] for joint in joints]
+
+        def parent_of(node: str) -> str | None:
+            parents = self._cmds.listRelatives(node, parent=True, fullPath=True)
+            return parents[0] if parents else None
+
+        return nearest_listed_ancestors(long_names, parent_of)
 
     def _joint_matrices(self, joints: list[str]) -> npt.NDArray[np.float64]:
         """Reads world-space rest matrices for the given joints.

@@ -30,9 +30,9 @@ python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations
 Every constructor setting below has a matching option (`--iterations` also
 takes a comma-separated list, `--number-of-bones`,
 `--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
-`--seed`, `--warm-up`). Joint matrices stored
+`--seed`, `--warm-up`). Joint matrices and the joint hierarchy stored
 in the model file by the exporter are used unless you pass
-`--ignore-joint-matrices`. This is the command the Maya pipeline runs in a
+`--ignore-joint-matrices` (both) or `--ignore-joint-hierarchy` (the hierarchy only). This is the command the Maya pipeline runs in a
 subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
 
 ## Settings
@@ -50,6 +50,8 @@ Constructor arguments:
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
+| `joint_parents` | `None` | With `rest_joint_matrices`, the parent index of each joint (-1 for none). The motion is then solved through that hierarchy. See [Joint hierarchy](#joint-hierarchy). |
+| `deltas_about_joints` | `False` | With `joint_parents`, solve each joint's own delta about the joint itself rather than the mesh centre. See [Joint hierarchy](#joint-hierarchy). |
 | `seed` | 12345 | Torch seed for the random initial deltas and weights. Change it to explore other local minima. |
 | `warm_up_enabled` | `True` | Whether to include an initial unnormalised warm-up phase. Set to `False` to skip the warm-up and run only normalised training stages; useful for research comparing the impact of the warm-up decay process. |
 
@@ -215,6 +217,46 @@ than the same $P$ without it; a two-stage schedule such as
 $K$ and usually recovers part of that. After the run the log reports how many
 vertices each joint drives and lists joints driving none; an idle joint is
 too far from the mesh or redundant with a neighbour.
+
+### Joint hierarchy
+
+Facial rigs are usually hierarchical: lip and chin tweakers sit under the jaw,
+eyelid joints under an eye joint. Pass that hierarchy and the solver uses it:
+
+```python
+compressor = SkinCompressor(
+    model_data=model_data,
+    rest_joint_matrices=joint_matrices,
+    joint_parents=[-1, 0, 0, 1, ...],  # parent index per joint, -1 for none
+)
+```
+
+The exporter writes `joint_parents` for you, and the command line and the Maya
+pipeline use it whenever the model file has it (`--ignore-joint-hierarchy` or
+`use_joint_hierarchy=False` to turn it off).
+
+What changes:
+
+- **A child moves with its parent.** Each joint's motion is the sum of its own
+  delta and its ancestors'. A lip vertex weighted only to the nearest lip
+  joint still opens with the jaw, so its weights can stay on the joints around
+  it instead of reaching for the jaw. That is what makes joints usable as
+  tweakers.
+- **The delta budget goes further.** `total_nnz_B_rt` counts each joint's own
+  delta, so motion shared by a whole region is stored once, on the parent.
+
+Optionally, `deltas_about_joints=True` (`--deltas-about-joints`) solves each
+joint's own delta about the joint's rest position instead of about the mesh
+centre, so a joint's rotation is directly its local rotation. It does not
+change what can be represented, but it changes which coefficients the delta
+budget keeps, and with a tight budget that can cost accuracy, so it is off by
+default.
+
+What stays the same: what the solver can represent (any result without the
+hierarchy can be written with it), and the meaning of `shapeXform`, which holds
+each joint's complete motion so runtimes and the rig builder work unchanged.
+The file additionally stores the hierarchy and each joint's own deltas; see
+[Data formats](../concepts/data_formats.md).
 
 Example script: `examples/example_custom_joints.py`.
 

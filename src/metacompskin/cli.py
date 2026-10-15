@@ -18,7 +18,10 @@ If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
 passed; each joint then only drives the vertices nearest to it along the mesh,
 ``--candidate-joints-per-vertex`` sets how many joints a vertex may use (0 turns
-the filter off). Pass ``--warm-up false`` to disable the unnormalised warm-up
+the filter off). If it also carries ``joint_parents`` (the exporter writes them
+with the joints) the deltas are solved through that joint hierarchy, so a child
+joint follows its parent; ``--ignore-joint-hierarchy`` solves every joint on its
+own instead. Pass ``--warm-up false`` to disable the unnormalised warm-up
 phase and run only normalised training (useful for research). CUDA is used
 automatically when this interpreter's torch sees a GPU.
 """
@@ -119,6 +122,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not use rest_joint_matrices stored in the model file.",
     )
     parser.add_argument(
+        "--ignore-joint-hierarchy",
+        action="store_true",
+        help="Do not use joint_parents stored in the model file; solve every joint on its own.",
+    )
+    parser.add_argument(
+        "--deltas-about-joints",
+        action="store_true",
+        help="With a joint hierarchy, solve each joint's own delta about the joint itself.",
+    )
+    parser.add_argument(
         "--root-joint",
         type=_root_joint_arg,
         default=None,
@@ -155,6 +168,13 @@ def main(argv: list[str] | None = None) -> Path:
     settings = _compressor_settings(args)
     if not args.ignore_joint_matrices:
         settings["rest_joint_matrices"] = _stored_joint_matrices(model_path)
+        if (
+            settings["rest_joint_matrices"] is not None
+            and not args.ignore_joint_hierarchy
+        ):
+            settings["joint_parents"] = _stored_joint_parents(model_path)
+            if settings["joint_parents"] is not None and args.deltas_about_joints:
+                settings["deltas_about_joints"] = True
 
     print(f"Compressing on {'cuda' if torch.cuda.is_available() else 'cpu'}")
     compressor = SkinCompressor(model_data=model_data, **settings)
@@ -211,6 +231,21 @@ def _stored_joint_matrices(model_path: Path) -> np.ndarray | None:
         if "rest_joint_matrices" not in archive.files:
             return None
         return archive["rest_joint_matrices"]
+
+
+def _stored_joint_parents(model_path: Path) -> np.ndarray | None:
+    """Reads ``joint_parents`` from a model file, if present.
+
+    Args:
+        model_path: Model NPZ path.
+
+    Returns:
+        Parent index per joint, shape (P,), or None when the file has none.
+    """
+    with np.load(model_path, allow_pickle=True) as archive:
+        if "joint_parents" not in archive.files:
+            return None
+        return archive["joint_parents"]
 
 
 if __name__ == "__main__":

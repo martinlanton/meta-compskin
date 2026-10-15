@@ -14,6 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import scipy as sp
@@ -171,6 +172,97 @@ def candidate_joint_mask(
     mask = np.zeros(distances.shape, dtype=bool)
     np.put_along_axis(mask, nearest[:candidates_per_vertex], True, axis=0)
     return mask
+
+
+def joint_chain_matrix(joint_parents: Sequence[int] | np.ndarray) -> np.ndarray:
+    """Marks, for every joint, itself and each of its ancestors.
+
+    Args:
+        joint_parents: Index of each joint's parent, or -1 for a joint with
+            no parent; shape (P,). Parents may be listed after their children.
+
+    Returns:
+        Matrix of shape (P, P), float64, where entry (j, a) is 1 when joint a
+        is joint j or one of its ancestors, else 0.
+
+    Raises:
+        ValueError: If a parent index is outside [-1, P), a joint is its own
+            parent, or the parents form a cycle.
+    """
+    parents = np.asarray(joint_parents, dtype=np.int64)
+    n_joints = len(parents)
+    if ((parents < -1) | (parents >= n_joints)).any():
+        raise ValueError(
+            f"joint parents must lie in [-1, {n_joints}), got {parents.tolist()}"
+        )
+    if (parents == np.arange(n_joints)).any():
+        raise ValueError("a joint cannot be its own parent")
+    chain = np.eye(n_joints)
+    for joint in range(n_joints):
+        ancestor, depth = parents[joint], 0
+        while ancestor != -1:
+            depth += 1
+            if depth > n_joints:
+                raise ValueError(f"joint parents form a cycle through joint {joint}")
+            chain[joint, ancestor] = 1.0
+            ancestor = parents[ancestor]
+    return chain
+
+
+def hierarchical_coefficients(
+    local: torch.Tensor, pivots: torch.Tensor, chain: torch.Tensor
+) -> torch.Tensor:
+    r"""Turns per-joint local deltas into the joint transforms skinning uses.
+
+    A local delta of joint j rotates about the joint's own rest position
+    :math:`p_j` and translates, :math:`D v = r \times (v - p_j) + t`. In the
+    shared frame that is rotation :math:`r` and translation
+    :math:`t - r \times p_j`. A joint's transform is the sum of its own and
+    its ancestors' deltas, :math:`N_j = \sum_{a \in chain(j)} D_a`, so a child
+    moves with its parent and stores only what it adds.
+
+    Args:
+        local: Local coefficients (rotation x, y, z, translation x, y, z),
+            shape (6, S, P, 1, 1).
+        pivots: Joint rest positions in the solver's centred frame, shape (P, 3).
+        chain: :func:`joint_chain_matrix` as a tensor, shape (P, P).
+
+    Returns:
+        Coefficients in the shared frame, shape (6, S, P, 1, 1), the layout
+        the transform basis expects.
+    """
+    rotation, translation = local[:3], local[3:]
+    pivot = pivots.T.reshape(3, 1, -1, 1, 1)
+    pivot_motion = torch.stack(
+        [
+            rotation[1] * pivot[2] - rotation[2] * pivot[1],
+            rotation[2] * pivot[0] - rotation[0] * pivot[2],
+            rotation[0] * pivot[1] - rotation[1] * pivot[0],
+        ]
+    )  # r x p, shape (3, S, P, 1, 1)
+    shared = torch.cat([rotation, translation - pivot_motion])
+    return torch.einsum("isakl,ja->isjkl", shared, chain)
+
+
+def accumulate_joint_transforms(
+    local_shape_xform: np.ndarray, joint_parents: Sequence[int] | np.ndarray
+) -> np.ndarray:
+    """Adds every joint's ancestors' local deltas to its own.
+
+    This is the runtime counterpart of :func:`hierarchical_coefficients` for
+    the ``localShapeXform`` array of a compressed file.
+
+    Args:
+        local_shape_xform: Local deltas in the shared frame, shape (3S, 4P).
+        joint_parents: Parent of each joint, -1 for none, shape (P,).
+
+    Returns:
+        Joint transforms with the layout of ``shapeXform``, shape (3S, 4P).
+    """
+    chain = joint_chain_matrix(joint_parents)
+    rows = local_shape_xform.shape[0]
+    blocks = local_shape_xform.reshape(rows, len(chain), 4)
+    return np.einsum("rak,ja->rjk", blocks, chain).reshape(rows, -1)
 
 
 @dataclass(frozen=True)
@@ -354,7 +446,9 @@ def _resolve_root_joint(
             unrecognized string.
     """
     if isinstance(requested, bool):
-        raise ValueError(f"root_joint must be an int, str or None, not {type(requested).__name__}")
+        raise ValueError(
+            f"root_joint must be an int, str or None, not {type(requested).__name__}"
+        )
 
     if requested is None:
         if has_joint_matrices:
@@ -544,6 +638,8 @@ class SkinCompressor:
         candidate_joints_per_vertex: int | None = None,
         root_joint: int | str | None = None,
         warm_up_enabled: bool = True,
+        joint_parents: Sequence[int] | None = None,
+        deltas_about_joints: bool = False,
     ):
         """Initializes the SkinCompressor.
 
@@ -590,7 +686,17 @@ class SkinCompressor:
                 joint as the root; the bone count stays P.
             warm_up_enabled: Whether to include an unnormalised warm-up phase
                 before the first stage (default True). When False, only stages
-                run, all normalised. Used for E3 experiments.
+                run, all normalised.
+            joint_parents: With rest_joint_matrices, the index of each joint's
+                parent (-1 for none), one entry per matrix. A joint's transform
+                then adds its ancestors' deltas to its own, so a child follows
+                its parent and the delta budget is spent on what each joint
+                adds. None (default) solves every joint independently.
+            deltas_about_joints: With joint_parents, solve each joint's own
+                delta about the joint's rest position rather than about the
+                mesh centre, so its rotation is directly the joint's local
+                rotation. Default False. This changes which coefficients the
+                delta budget keeps, which can cost accuracy.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -598,7 +704,11 @@ class SkinCompressor:
                 if iterations is an empty sequence or any entry is below one;
                 if candidate_joints_per_vertex is given without joint
                 matrices or lies outside K <= M < P; if root_joint is a bool,
-                an out-of-range int, or an unrecognized string.
+                an out-of-range int, or an unrecognized string; if
+                joint_parents is given without joint matrices, with the wrong
+                length, with invalid or cyclic parents, or with a designated
+                root joint that has a parent; if deltas_about_joints is set
+                without joint_parents.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -670,6 +780,15 @@ class SkinCompressor:
             has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
             number_of_bones=n_geodesic_joints,
         )
+
+        self.joint_parents = self._resolve_joint_parents(
+            joint_parents, n_geodesic_joints
+        )
+        if deltas_about_joints and self.joint_parents is None:
+            raise ValueError("deltas_about_joints needs joint_parents")
+        self.deltas_about_joints = deltas_about_joints
+        self._joint_pivots: torch.Tensor | None = None
+        self._joint_chain: torch.Tensor | None = None
 
         self.max_influences = max_influences  # number of weights per vertex
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
@@ -832,6 +951,7 @@ class SkinCompressor:
         )
         self.candidate_mask = self._build_candidate_mask()
         self.transform_mask = self._build_transform_mask()
+        self._prepare_joint_hierarchy()
 
         # Apply transform mask to B_rt initialization
         if self.transform_mask is not None:
@@ -893,7 +1013,105 @@ class SkinCompressor:
             weights=npf(Wn).transpose(),
             restXform=rest_xform,
             shapeXform=shapeXforms,
+            **self._hierarchy_outputs(B_rt, TR),
         )
+
+    def _resolve_joint_parents(
+        self, joint_parents: Sequence[int] | None, n_joints: int
+    ) -> np.ndarray | None:
+        """Validates joint_parents and extends it with the synthetic root.
+
+        Args:
+            joint_parents: The constructor argument.
+            n_joints: Number of joint matrices supplied.
+
+        Returns:
+            Parent per bone, shape (P',), or None without a hierarchy.
+
+        Raises:
+            ValueError: See the constructor.
+        """
+        if joint_parents is None:
+            return None
+        if self.rest_joint_matrices_3x4 is None:
+            raise ValueError(
+                "joint_parents needs rest_joint_matrices: parents refer to joints"
+            )
+        parents = np.asarray(joint_parents, dtype=np.int64)
+        if parents.shape != (n_joints,):
+            raise ValueError(
+                f"joint_parents needs one parent per joint ({n_joints}), got {parents.shape}"
+            )
+        joint_chain_matrix(parents)
+        if (
+            self.root_joint is not None
+            and self.root_joint < n_joints
+            and parents[self.root_joint] != -1
+        ):
+            raise ValueError(
+                f"root_joint={self.root_joint} has a parent; the root must be a top-level "
+                "joint so that its transform stays zero"
+            )
+        if self.number_of_bones > n_joints:  # synthetic root, no parent
+            parents = np.append(parents, -1)
+        return parents
+
+    def _prepare_joint_hierarchy(self) -> None:
+        """Puts the joint pivots and the chain matrix on the device for run().
+
+        With deltas_about_joints the pivots are the joint rest positions in
+        the solver's frame, where the rest vertices are centred on their mean;
+        otherwise every delta acts about that centre (zero pivots).
+        """
+        if self.joint_parents is None or self.rest_joint_matrices_3x4 is None:
+            return
+        pivots = np.zeros((self.number_of_bones, 3))
+        if self.deltas_about_joints:
+            joints = self.rest_joint_matrices_3x4[:, :3, 3]
+            pivots[: len(joints)] = joints - self.model_data.rest_verts.mean(axis=0)
+        self._joint_pivots = torch.from_numpy(pivots).float().to(self.device)
+        chain = joint_chain_matrix(self.joint_parents)
+        self._joint_chain = torch.from_numpy(chain).float().to(self.device)
+
+    def _joint_coefficients(self, B_rt: torch.Tensor) -> torch.Tensor:  # noqa: N803
+        """The coefficients of each joint's transform, through the hierarchy if any.
+
+        Args:
+            B_rt: Optimised coefficients, shape (6, S, P, 1, 1).
+
+        Returns:
+            Coefficients in the shared frame, shape (6, S, P, 1, 1).
+        """
+        if self._joint_chain is None or self._joint_pivots is None:
+            return B_rt
+        return hierarchical_coefficients(B_rt, self._joint_pivots, self._joint_chain)
+
+    def _hierarchy_outputs(
+        self,
+        B_rt: torch.Tensor,  # noqa: N803
+        TR: torch.Tensor,  # noqa: N803
+    ) -> dict[str, Any]:
+        """The extra archive keys written when a joint hierarchy was solved.
+
+        Args:
+            B_rt: Optimised local coefficients, shape (6, S, P, 1, 1).
+            TR: Transform basis, shape (6, 1, 1, 3, 4).
+
+        Returns:
+            ``jointParents`` (P',) and ``localShapeXform`` (3S, 4P'), or an
+            empty dict without a hierarchy.
+        """
+        if self.joint_parents is None or self._joint_pivots is None:
+            return {}
+        identity = torch.eye(self.number_of_bones, device=self.device)
+        local = hierarchical_coefficients(B_rt, self._joint_pivots, identity)
+        local_matrix = self._transform_matrix(
+            local, TR, self.model_data.n_blendshapes, self.number_of_bones
+        )
+        return {
+            "jointParents": self.joint_parents.copy(),
+            "localShapeXform": local_matrix.detach().cpu().numpy(),
+        }
 
     def _check_schedule_fits_model(self) -> None:
         """Rejects a schedule the projections cannot apply to this model.
@@ -927,7 +1145,9 @@ class SkinCompressor:
         """
         if self.root_joint is None:
             return None
-        mask = torch.ones(1, 1, self.number_of_bones, 1, 1, dtype=torch.bool, device=self.device)
+        mask = torch.ones(
+            1, 1, self.number_of_bones, 1, 1, dtype=torch.bool, device=self.device
+        )
         mask[0, 0, self.root_joint, 0, 0] = False
         return mask
 
@@ -943,9 +1163,13 @@ class SkinCompressor:
         if self.rest_joint_matrices_3x4 is not None:
             matrices = self.rest_joint_matrices_3x4.copy()
         else:
-            matrices = np.eye(3, 4)[np.newaxis, :, :].repeat(self.number_of_bones - (1 if self.root_joint is not None else 0), axis=0)
+            matrices = np.eye(3, 4)[np.newaxis, :, :].repeat(
+                self.number_of_bones - (1 if self.root_joint is not None else 0), axis=0
+            )
 
-        if self.root_joint is not None and self.root_joint == (self.number_of_bones - 1):
+        if self.root_joint is not None and self.root_joint == (
+            self.number_of_bones - 1
+        ):
             identity_row = np.eye(3, 4)[np.newaxis, :, :]
             matrices = np.vstack([matrices, identity_row])
         return matrices.astype(np.float32)
@@ -1439,10 +1663,7 @@ class SkinCompressor:
                 "rest_pose is not initialized; compBX must be called via run()."
             )
         X = (Wn.unsqueeze(2) * self.rest_pose).permute(0, 2, 1).reshape(4 * P, -1)
-        B = B_rt[0, ...] * TR[0]
-        for i in range(1, 6):
-            B += B_rt[i, ...] * TR[i]
-        B = B.permute(0, 2, 1, 3).reshape(n_bs * 3, P * 4)
+        B = self._transform_matrix(self._joint_coefficients(B_rt), TR, n_bs, P)
         # B current bone transforms
         #               bone 0... bone N
         #                0123     0123
@@ -1457,6 +1678,29 @@ class SkinCompressor:
         #              ┆               ┆
         #              └               ┘
         return B @ X, B, X
+
+    @staticmethod
+    def _transform_matrix(
+        coefficients: torch.Tensor,
+        TR: torch.Tensor,
+        n_bs: int,
+        P: int,  # noqa: N803
+    ) -> torch.Tensor:
+        """Assembles B, shape (3S, 4P), from coefficients in the shared frame.
+
+        Args:
+            coefficients: Shape (6, S, P, 1, 1).
+            TR: Transform basis, shape (6, 1, 1, 3, 4).
+            n_bs: Number of blendshapes S.
+            P: Number of bones.
+
+        Returns:
+            The transform matrix B, shape (3S, 4P).
+        """
+        B = coefficients[0, ...] * TR[0]
+        for i in range(1, 6):
+            B = B + coefficients[i, ...] * TR[i]
+        return B.permute(0, 2, 1, 3).reshape(n_bs * 3, P * 4)
 
     def buildTR(self) -> torch.Tensor:
         """Builds the 6-DOF transformation basis matrices (Equation 8).

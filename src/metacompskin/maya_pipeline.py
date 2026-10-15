@@ -96,6 +96,9 @@ class CompressionSettings:
             a vertex may be weighted to (0 turns the filter off).
         use_joint_matrices: Use the ``rest_joint_matrices`` the exporter wrote
             (when ``joints`` were given), so P and the joint placement follow them.
+        use_joint_hierarchy: Solve the deltas through the joint hierarchy the
+            exporter wrote (``joint_parents``), so a child joint follows its
+            parent. Only applies with joint matrices.
     """
 
     iterations: int | tuple[int, ...] = 10000
@@ -110,6 +113,7 @@ class CompressionSettings:
     root_joint: int | str | None = None
     warm_up_enabled: bool | None = None
     use_joint_matrices: bool = True
+    use_joint_hierarchy: bool = True
 
 
 @dataclass(frozen=True)
@@ -144,6 +148,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     seed: int | None = None,
     candidate_joints_per_vertex: int | None = None,
     use_joint_matrices: bool = True,
+    use_joint_hierarchy: bool = True,
     name: str = "compskin",
 ) -> PipelineResult:
     """Exports the mesh, compresses it in a subprocess and builds the rig.
@@ -184,6 +189,8 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
             ``min(2 * K, P - 1)``; 0 turns the filter off).
         use_joint_matrices: Use the rest matrices exported for ``joints`` so P
             and the joint placement follow them (default True).
+        use_joint_hierarchy: Solve through the Maya hierarchy of ``joints``,
+            so a child joint follows its parent (default True).
         name: Prefix for every node the rig builder creates.
 
     Returns:
@@ -208,6 +215,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         seed=seed,
         candidate_joints_per_vertex=candidate_joints_per_vertex,
         use_joint_matrices=use_joint_matrices,
+        use_joint_hierarchy=use_joint_hierarchy,
     )
     source = resolve_source_mesh(cmds, mesh)
     directory = (
@@ -459,6 +467,8 @@ def compression_command(
         command += ["--warm-up", str(settings.warm_up_enabled)]
     if not settings.use_joint_matrices:
         command.append("--ignore-joint-matrices")
+    if not settings.use_joint_hierarchy:
+        command.append("--ignore-joint-hierarchy")
     return command
 
 
