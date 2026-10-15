@@ -19,10 +19,18 @@ from metacompskin.model_fit import SkinCompressor
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
 N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
 MAX_INFLUENCES = 8  # K, SkinCompressor default
+# Non-zero fraction of the 6-DOF transform deltas (6 per shape and bone).
+# The paper keeps about 10% (L = 6000 at P = 40, Section 4); 15% here.
+NNZ_DENSITY = 0.15
 # Fraction of the zero-motion error (predicting no deltas at all) the
 # compression must stay under; 600 iterations reach roughly 0.3 on proteus.
 MEAN_ERROR_RATIO = 0.5
 MAX_ERROR_RATIO = 0.6
+
+
+def sparsity_budget(model) -> int:
+    """L, the non-zero transform deltas kept: NNZ_DENSITY of all 6 * S * P."""
+    return round(NNZ_DENSITY * 6 * model.n_blendshapes * N_BONES)
 
 
 @pytest.fixture(scope="module")
@@ -30,7 +38,10 @@ def compressed(head_model, tmp_path_factory):
     """Compress the head once and return (compressor, output arrays)."""
     output = tmp_path_factory.mktemp("end_to_end") / "compressed.npz"
     compressor = SkinCompressor(
-        model_data=head_model, iterations=ITERATIONS, number_of_bones=N_BONES
+        model_data=head_model,
+        iterations=ITERATIONS,
+        number_of_bones=N_BONES,
+        total_nnz_B_rt=sparsity_budget(head_model),
     )
     compressor.run(output_location=output)
     return compressor, np.load(output)

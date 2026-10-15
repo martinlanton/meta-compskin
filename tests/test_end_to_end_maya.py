@@ -28,11 +28,19 @@ from metacompskin.model_data import BlendshapeModelData
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
 N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
 MAX_INFLUENCES = 8  # K, SkinCompressor default
+# Non-zero fraction of the 6-DOF transform deltas (6 per shape and bone).
+# The paper keeps about 10% (L = 6000 at P = 40, Section 4); 15% here.
+NNZ_DENSITY = 0.15
 MEAN_ERROR_RATIO = 0.5  # see test_end_to_end_compression.py
 MAX_ERROR_RATIO = 0.6
 OUTPUT_DIR = Path(__file__).parents[1] / "output" / "end_to_end"
 DRIVER = Path(__file__).parent / "maya_scripts" / "end_to_end_rig_in_maya.py"
 ATOL = 1e-3  # cm; float32 points read back from Maya
+
+
+def sparsity_budget(model) -> int:
+    """L, the non-zero transform deltas kept: NNZ_DENSITY of all 6 * S * P."""
+    return round(NNZ_DENSITY * 6 * model.n_blendshapes * N_BONES)
 
 
 def run_driver(mayapy: Path, scene_input: Path, report: Path) -> None:
@@ -67,6 +75,7 @@ def rig_report(mayapy_path, head_model, head_shape_names, tmp_path_factory):
         shape_names=np.array(head_shape_names),
         iterations=ITERATIONS,
         number_of_bones=N_BONES,
+        total_nnz_B_rt=sparsity_budget(head_model),
     )
     report = workdir / "report.npz"
 

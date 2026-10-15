@@ -6,8 +6,8 @@ Run by tests/test_end_to_end_maya.py through a mayapy subprocess::
         <output_dir> <report.npz>
 
 ``scene_input.npz`` holds ``rest_verts`` (N, 3), ``faces`` (F, 4), ``deltas``
-(S, N, 3), ``shape_names`` (S,) and the compressor's ``iterations`` and
-``number_of_bones``. The head gets a blendShape node with one
+(S, N, 3), ``shape_names`` (S,) and the compressor's ``iterations``,
+``number_of_bones`` and ``total_nnz_B_rt``. The head gets a blendShape node with one
 target per shape, then ``compress_and_build_rig`` exports, compresses and
 builds the skinned duplicate. The original blendShape is then keyed on the
 same timeline as the rig (frame 0 neutral, frame k + 1 shape k), so scrubbing
@@ -115,6 +115,7 @@ def main(scene_input: Path, python: str, output_dir: Path, report: Path) -> None
         output_dir=output_dir,
         iterations=int(scene["iterations"]),
         number_of_bones=int(scene["number_of_bones"]),
+        total_nnz_B_rt=int(scene["total_nnz_B_rt"]),
     )
     key_source_like_the_rig(blendshape, n_shapes)
     frames = sample(result.rig, source, n_shapes + 1)
