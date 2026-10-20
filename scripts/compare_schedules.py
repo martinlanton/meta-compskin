@@ -6,7 +6,8 @@ phase-count control at the same K/L throughout, and two annealed schedules
 same *total* step count, and reports mean/std/min/max of the final MXE and
 MAE per variant. This answers the question "does annealing the influence
 budget beat the baseline by more than seed-to-seed noise?" for a given
-model; see plan/research.md Section 8 for how to read the result.
+model; see "Comparing schedules and seeds" in docs/user_guide/compressing.md
+for how to read the result.
 
 Usage::
 
@@ -175,9 +176,6 @@ def build_variants(
 
     Returns:
         [baseline, baseline_control, anneal_k, anneal_kl].
-
-    References:
-        plan/spec.md Section 6.5 (the variant table).
     """
     baseline_iterations = iterations_per_phase(total_iterations, 2)
     baseline = Variant(

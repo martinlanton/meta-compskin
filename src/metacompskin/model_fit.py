@@ -132,7 +132,7 @@ def geodesic_joint_distances(
         Distances, shape (P, N), float64 and finite.
 
     References:
-        plan/joints_geodesic_distance_filter/research.md Section 4.
+        Dijkstra 1959, shortest paths on the graph of mesh edges.
     """
     verts = np.asarray(rest_verts, dtype=np.float64)
     joints = np.asarray(joint_positions, dtype=np.float64)
@@ -336,7 +336,7 @@ class TrainingPhase:
         ValueError: If any count is below one.
 
     References:
-        Section 4 of the paper, projections (1)-(3); plan/spec.md Section 7.
+        Section 4 of the paper, projections (1)-(3).
     """
 
     iterations: int
@@ -413,8 +413,7 @@ def build_training_schedule(
             or ``start_influences`` is below ``max_influences``.
 
     References:
-        Zhu & Gupta 2017 (gradual magnitude pruning);
-        plan/joints_geodesic_distance_filter/research.md Section 5.
+        Zhu & Gupta 2017 (gradual magnitude pruning).
     """
     if not stage_iterations:
         raise ValueError("iterations must contain at least one stage")
