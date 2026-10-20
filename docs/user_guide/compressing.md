@@ -30,10 +30,10 @@ python -m metacompskin exports/head.npz exports/head_compressed.npz --iterations
 Every constructor setting below has a matching option (`--iterations` also
 takes a comma-separated list, `--number-of-bones`,
 `--max-influences`, `--total-nnz-b-rt`, `--init-weight`, `--power`, `--alpha`,
-`--seed`, `--warm-up`). Joint matrices and the joint hierarchy stored
-in the model file by the exporter are used unless you pass
-`--ignore-joint-matrices` (both) or `--ignore-joint-hierarchy` (the hierarchy only). This is the command the Maya pipeline runs in a
-subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
+`--seed`, `--warm-up`, `--weight-init`). Joint matrices stored in the model
+file by the exporter are used unless you pass `--ignore-joint-matrices`; the
+joint hierarchy stored with them is used only with `--joint-hierarchy`. This is
+the command the Maya pipeline runs in a subprocess ([Maya rig workflow](maya_rig_workflow.md#42-one-call-from-maya)).
 
 ## Settings
 
@@ -46,11 +46,12 @@ Constructor arguments:
 | `rest_joint_matrices` | `None` | `(P, 4, 4)` joint rest matrices. When given, $P$ becomes the number of matrices. |
 | `number_of_bones` | 100 | $P$. Only needed without `rest_joint_matrices`; if both are given they must agree. |
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
-| `candidate_joints_per_vertex` | `min(2K, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
+| `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
+| `weight_init` | `"distance"` with joint matrices, `"noise"` without | Where the skin weights start. `"distance"` weights each vertex to its $K$ nearest joints by distance and puts vertices no shape moves on the root; `"noise"` starts from tiny random values. See [Starting weights](#starting-weights). |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
-| `joint_parents` | `None` | With `rest_joint_matrices`, the parent index of each joint (-1 for none). The motion is then solved through that hierarchy. See [Joint hierarchy](#joint-hierarchy). |
+| `joint_parents` | `None` | With `rest_joint_matrices`, the parent index of each joint (-1 for none). The motion is then solved through that hierarchy. Optional; see [Joint hierarchy](#joint-hierarchy). |
 | `deltas_about_joints` | `False` | With `joint_parents`, solve each joint's own delta about the joint itself rather than the mesh centre. See [Joint hierarchy](#joint-hierarchy). |
 | `seed` | 12345 | Torch seed for the random initial deltas and weights. Change it to explore other local minima. |
 | `warm_up_enabled` | `True` | Whether to include an initial unnormalised warm-up phase. Set to `False` to skip the warm-up and run only normalised training stages; useful for research comparing the impact of the warm-up decay process. |
@@ -198,13 +199,16 @@ What custom joints change:
 - **Each joint drives the skin around it.** A vertex may only take weight
   from its $M$ nearest joints, measured along the mesh surface so that an
   upper-lip vertex is far from a lower-lip joint even though the two are
-  close in space. $M$ is `candidate_joints_per_vertex`, `min(2K, P-1)` by
-  default, so 16 at the default $K$. This is what makes the joints usable as
-  tweakers: the solved motion goes on the tweaker control's parent, and an
-  animator moving the control on top of it moves the skin under that joint
-  and nothing else. Pass `candidate_joints_per_vertex=0` to solve without the
-  filter (the pre-existing behaviour, where a joint could drive any part of
-  the face).
+  close in space. $M$ is `candidate_joints_per_vertex`, `min(K+2, P-1)` by
+  default, so 10 at the default $K$: two spare candidates per vertex, which
+  on real rigs gave markedly more local joints than a wider mask at the same
+  error. This is what makes the joints usable as tweakers: the solved motion
+  goes on the tweaker control's parent, and an animator moving the control
+  on top of it moves the skin under that joint and nothing else. Pass
+  `candidate_joints_per_vertex=0` to solve without the filter (where a joint
+  could drive any part of the face).
+- **The weights start near the joints.** See [Starting
+  weights](#starting-weights) below.
 
 What they do not change: the deltas are still computed as if every joint sat
 at the origin with identity orientation; joint placement in the rig is
@@ -218,10 +222,30 @@ $K$ and usually recovers part of that. After the run the log reports how many
 vertices each joint drives and lists joints driving none; an idle joint is
 too far from the mesh or redundant with a neighbour.
 
+### Starting weights
+
+Which joints a vertex ends up on is largely decided in the first few solver
+steps (see [How the solver works](../concepts/how_the_solver_works.md)), so
+where the weights start matters. With joint matrices, `weight_init="distance"`
+(the default) starts every vertex on its $K$ nearest joints along the surface,
+the nearest with the largest weight and the weight falling to zero at the
+next joint out, and starts vertices that no shape moves fully on the root. The
+solver is then free to change all of it: static skin stays on the root except
+along its border with moving skin, where the smoothness term blends the two.
+On real rigs this start gave both more local joints and a slightly lower
+error than the random start.
+
+`weight_init="noise"` (`--weight-init noise`) is the original behaviour, and
+the only one without joint matrices: tiny random values, so the first steps
+pick the joints. Use it to compare against earlier results.
+
 ### Joint hierarchy
 
 Facial rigs are usually hierarchical: lip and chin tweakers sit under the jaw,
-eyelid joints under an eye joint. Pass that hierarchy and the solver uses it:
+eyelid joints under an eye joint. The solver can use that hierarchy. It is
+optional and off by default: on the rigs tested so far it did not make joints
+more local and cost a little accuracy, so turn it on to try it, not as a
+matter of course.
 
 ```python
 compressor = SkinCompressor(
@@ -231,17 +255,15 @@ compressor = SkinCompressor(
 )
 ```
 
-The exporter writes `joint_parents` for you, and the command line and the Maya
-pipeline use it whenever the model file has it (`--ignore-joint-hierarchy` or
-`use_joint_hierarchy=False` to turn it off).
+The exporter writes `joint_parents` for you; pass `--joint-hierarchy` on the
+command line or `use_joint_hierarchy=True` in the Maya pipeline to use it.
 
 What changes:
 
 - **A child moves with its parent.** Each joint's motion is the sum of its own
   delta and its ancestors'. A lip vertex weighted only to the nearest lip
   joint still opens with the jaw, so its weights can stay on the joints around
-  it instead of reaching for the jaw. That is what makes joints usable as
-  tweakers.
+  it instead of reaching for the jaw.
 - **The delta budget goes further.** `total_nnz_B_rt` counts each joint's own
   delta, so motion shared by a whole region is stored once, on the parent.
 

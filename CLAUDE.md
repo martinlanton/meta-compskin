@@ -73,8 +73,9 @@ Input .npz (blendshapes)
 | `alpha` | model-specific | Laplacian regularization strength |
 | `seed` | 12345 | Torch seed for the random initialization |
 | `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases. Warm-up runs at M (mask width) when geodesic filtering is on. |
-| `candidate_joints_per_vertex` | `min(2K, P-1)` with joint matrices | M nearest joints (geodesic) a vertex may be weighted to; also the annealing ceiling; 0 disables |
-| `joint_parents` | `None` | With joint matrices: parent index per joint (-1 none). Each joint's own delta is summed down the hierarchy; output adds `jointParents` and `localShapeXform`. `deltas_about_joints=True` solves own deltas about each joint instead of the mesh centre. |
+| `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | M nearest joints (geodesic) a vertex may be weighted to; also the annealing ceiling; 0 disables |
+| `weight_init` | `"distance"` with matrices, `"noise"` else | Starting weights: distance bind over the K nearest joints with static vertices on the root, or tiny noise (the anonymous path, pinned) |
+| `joint_parents` | `None` | Optional (CLI `--joint-hierarchy`). With joint matrices: parent index per joint (-1 none). Each joint's own delta is summed down the hierarchy; output adds `jointParents` and `localShapeXform`. `deltas_about_joints=True` solves own deltas about each joint instead of the mesh centre. |
 | `root_joint` | `"new"` with matrices, `None` else | Root influence: `None`/auto, `"new"` (synthetic), `"none"` (off), or a joint index. Static/unexplainable vertices land on root. |
 
 ## Testing

@@ -98,7 +98,9 @@ class CompressionSettings:
             (when ``joints`` were given), so P and the joint placement follow them.
         use_joint_hierarchy: Solve the deltas through the joint hierarchy the
             exporter wrote (``joint_parents``), so a child joint follows its
-            parent. Only applies with joint matrices.
+            parent. Off by default; only applies with joint matrices.
+        weight_init: Where the weights start, ``"distance"`` or ``"noise"``;
+            None leaves the choice to the compressor (distance with joints).
     """
 
     iterations: int | tuple[int, ...] = 10000
@@ -113,7 +115,8 @@ class CompressionSettings:
     root_joint: int | str | None = None
     warm_up_enabled: bool | None = None
     use_joint_matrices: bool = True
-    use_joint_hierarchy: bool = True
+    use_joint_hierarchy: bool = False
+    weight_init: str | None = None
 
 
 @dataclass(frozen=True)
@@ -148,7 +151,8 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     seed: int | None = None,
     candidate_joints_per_vertex: int | None = None,
     use_joint_matrices: bool = True,
-    use_joint_hierarchy: bool = True,
+    use_joint_hierarchy: bool = False,
+    weight_init: str | None = None,
     name: str = "compskin",
 ) -> PipelineResult:
     """Exports the mesh, compresses it in a subprocess and builds the rig.
@@ -190,7 +194,9 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         use_joint_matrices: Use the rest matrices exported for ``joints`` so P
             and the joint placement follow them (default True).
         use_joint_hierarchy: Solve through the Maya hierarchy of ``joints``,
-            so a child joint follows its parent (default True).
+            so a child joint follows its parent (default False).
+        weight_init: Where the weights start, ``"distance"`` or ``"noise"``
+            (default None: distance with ``joints``, noise without).
         name: Prefix for every node the rig builder creates.
 
     Returns:
@@ -216,6 +222,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         candidate_joints_per_vertex=candidate_joints_per_vertex,
         use_joint_matrices=use_joint_matrices,
         use_joint_hierarchy=use_joint_hierarchy,
+        weight_init=weight_init,
     )
     source = resolve_source_mesh(cmds, mesh)
     directory = (
@@ -458,6 +465,7 @@ def compression_command(
         "--seed": settings.seed,
         "--candidate-joints-per-vertex": settings.candidate_joints_per_vertex,
         "--root-joint": settings.root_joint,
+        "--weight-init": settings.weight_init,
     }
     for flag, value in options.items():
         if value is not None:
@@ -467,8 +475,8 @@ def compression_command(
         command += ["--warm-up", str(settings.warm_up_enabled)]
     if not settings.use_joint_matrices:
         command.append("--ignore-joint-matrices")
-    if not settings.use_joint_hierarchy:
-        command.append("--ignore-joint-hierarchy")
+    if settings.use_joint_hierarchy:
+        command.append("--joint-hierarchy")
     return command
 
 

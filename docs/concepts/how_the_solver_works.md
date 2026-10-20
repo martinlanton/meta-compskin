@@ -123,10 +123,16 @@ for when this helps and how to set it.
 ## Initialisation and reproducibility
 
 - `B_rt` starts as small Gaussian noise (scale `init_weight`, $10^{-3}$).
-- `W` starts as very small Gaussian noise ($10^{-8}$), so the first
-  projection picks an essentially random $K$ joints per vertex (among the $M$
-  nearest, with custom joints); the optimiser sorts it out within the first
-  few hundred iterations (Figure 1 of the paper shows this convergence).
+- `W` starts, without joint matrices, as very small Gaussian noise
+  ($10^{-8}$), so the first projection picks an essentially random $K$ joints
+  per vertex; the optimiser sorts it out within the first few hundred
+  iterations (Figure 1 of the paper shows this convergence). That first pick
+  is sticky: a zeroed weight re-enters only while every weight in its column
+  is still tiny, so the joints chosen in the first steps are largely the
+  joints shipped. With joint matrices `W` therefore starts from each vertex's
+  distance to the joints instead (`weight_init="distance"`, see
+  [Compressing](../user_guide/compressing.md#starting-weights)), with
+  vertices no shape moves placed on the root.
 - The torch seed is the `seed` argument, 12345 by default. Runs with the same
   seed on the same hardware and library versions are bit-for-bit repeatable;
   the regression tests rely on this. Different GPUs, CPU versus GPU, or
@@ -177,7 +183,8 @@ tables are in millimetres). How to interpret them is in
 | `iterations` | 10 000 per phase | lower error, longer solve; returns diminish past ~20 000 total; as a sequence, anneals the influence budget over more phases | faster, rougher; 600 is enough to check a pipeline |
 | `number_of_bones` ($P$) | 100 | more capacity, higher runtime cost per frame | cheaper runtime, error rises quickly below ~20 |
 | `max_influences` ($K$) | 8 | smoother weight maps, more shader cost | must stay ≥ 4 or so; must be smaller than $P$ |
-| `candidate_joints_per_vertex` ($M$, custom joints only) | $\min(2K, P-1)$ | more freedom for the solver, lower error, joints reach further from their position | tighter locality per joint, higher error; $M = K$ leaves the solver nothing to choose |
+| `candidate_joints_per_vertex` ($M$, custom joints only) | $\min(K+2, P-1)$ | more freedom for the solver, joints reach further from their position; on real rigs $2K$ halved the locality for no accuracy gain | tighter locality per joint; $M = K$ leaves the solver nothing to choose |
+| `weight_init` (custom joints only) | `"distance"` | | `"noise"` returns to the random start: less local joints, slightly higher error on real rigs |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
 | `alpha` | per model, 10 or 50 | smoother, blurrier result | sharper, risk of noisy weights; lower for dense meshes |
 | `power` ($p$) | 2 | high values (12) minimise the *worst* error at the cost of smoothness; needs more capacity and many more iterations | |

@@ -42,6 +42,10 @@ _DEFAULT_SEED = 12345
 _ROOT_WEIGHT_FLOOR = 1e-6  # smallest weight the root influence can hold
 _ROOT_JOINT_NEW = "new"
 _ROOT_JOINT_NONE = "none"
+_WEIGHT_INITS = ("noise", "distance")
+_STATIC_MOTION_FRACTION = (
+    1e-3  # a vertex is static below this share of the largest motion
+)
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -172,6 +176,58 @@ def candidate_joint_mask(
     mask = np.zeros(distances.shape, dtype=bool)
     np.put_along_axis(mask, nearest[:candidates_per_vertex], True, axis=0)
     return mask
+
+
+def distance_weights(distances: np.ndarray, max_influences: int) -> np.ndarray:
+    r"""Builds skinning weights from each vertex's distance to the joints.
+
+    Each vertex is weighted to its ``max_influences`` nearest joints with a
+    falloff that reaches zero at the next nearest joint:
+    :math:`w_j \propto (1 - d_j / d_{K+1})^2` for the K nearest, zero beyond,
+    normalised to sum to one. The nearest joint always gets the largest
+    weight, so a joint's support is the region around it. These are the
+    starting weights of a solve with joint matrices (see
+    :class:`SkinCompressor`), not a finished bind.
+
+    Args:
+        distances: Joint-to-vertex distances, shape (P, N), for example from
+            :func:`geodesic_joint_distances`.
+        max_influences: K, the number of joints each vertex starts on.
+
+    Returns:
+        Weights of shape (P, N), float64, every column summing to one.
+
+    References:
+        Baran & Popović 2007 (Pinocchio) and Dionne & de Lasa 2013 for
+        distance-based binds; the falloff here is the simplest of that family.
+    """
+    n_joints, n_verts = distances.shape
+    keep = min(max_influences, n_joints - 1)
+    order = np.argsort(distances, axis=0)[: keep + 1]  # (K+1, N), nearest first
+    nearest = np.take_along_axis(distances, order, axis=0)
+    radius = np.maximum(nearest[-1], 1e-12)
+    falloff = np.clip(1.0 - nearest[:-1] / radius, 0.0, None) ** 2  # (K, N)
+    falloff[0, falloff.sum(axis=0) <= 0] = 1.0  # all K joints at one distance
+    weights = np.zeros_like(distances, dtype=np.float64)
+    np.put_along_axis(weights, order[:-1], falloff, axis=0)
+    return weights / weights.sum(axis=0)
+
+
+def static_vertex_mask(
+    deltas: np.ndarray, fraction: float = _STATIC_MOTION_FRACTION
+) -> np.ndarray:
+    """Marks the vertices no blendshape moves.
+
+    Args:
+        deltas: Blendshape offsets, shape (S, N, 3).
+        fraction: A vertex is static when its largest displacement over all
+            shapes is below this share of the model's largest displacement.
+
+    Returns:
+        Boolean mask of shape (N,).
+    """
+    motion = np.linalg.norm(np.asarray(deltas, dtype=np.float64), axis=2).max(axis=0)
+    return motion < fraction * motion.max()
 
 
 def joint_chain_matrix(joint_parents: Sequence[int] | np.ndarray) -> np.ndarray:
@@ -473,6 +529,32 @@ def _resolve_root_joint(
     )
 
 
+def _resolve_weight_init(requested: str | None, has_joint_matrices: bool) -> str:
+    """Turns the weight_init argument into "noise" or "distance".
+
+    Args:
+        requested: The constructor argument, or None for the default.
+        has_joint_matrices: Whether joint positions are available.
+
+    Returns:
+        "distance" with joint matrices, "noise" without, unless requested.
+
+    Raises:
+        ValueError: If the value is unknown, or "distance" is requested
+            without joint matrices.
+    """
+    if requested is None:
+        return "distance" if has_joint_matrices else "noise"
+    if requested not in _WEIGHT_INITS:
+        raise ValueError(f"weight_init={requested!r} must be one of {_WEIGHT_INITS}")
+    if requested == "distance" and not has_joint_matrices:
+        raise ValueError(
+            'weight_init="distance" needs rest_joint_matrices: the start is built '
+            "from each vertex's distance to the joints"
+        )
+    return requested
+
+
 def _resolve_candidate_joints(
     requested: int | None,
     has_joint_matrices: bool,
@@ -503,7 +585,7 @@ def _resolve_candidate_joints(
             )
         return None
     if requested is None:
-        default = min(2 * max_influences, number_of_bones - 1)
+        default = min(max_influences + 2, number_of_bones - 1)
         # Fewer joints than K + 1 cannot run at all; leave that to run().
         return default if default >= max_influences else None
     if requested == 0:
@@ -583,6 +665,8 @@ class SkinCompressor:
         candidate_joints_per_vertex: Nearest joints M each vertex may be
             weighted to, or None when no joint matrices were given or the
             filter was turned off. See candidate_joint_mask.
+        weight_init: "distance" or "noise", where the weights start; see the
+            constructor.
         candidate_mask: Boolean (P, N) tensor built by run() from the joint
             positions, or None without a filter.
         total_nnz_B_rt: Total non-zeros in B_rt matrix (default 6000).
@@ -640,6 +724,7 @@ class SkinCompressor:
         warm_up_enabled: bool = True,
         joint_parents: Sequence[int] | None = None,
         deltas_about_joints: bool = False,
+        weight_init: str | None = None,
     ):
         """Initializes the SkinCompressor.
 
@@ -673,7 +758,7 @@ class SkinCompressor:
             candidate_joints_per_vertex: With rest_joint_matrices, the number
                 of nearest joints M (by geodesic distance along the mesh) a
                 vertex may take its weights from, so each joint drives the
-                region around it. None picks ``min(2 * K, P - 1)``; 0 turns
+                region around it. None picks ``min(K + 2, P - 1)``; 0 turns
                 the filter off. Must satisfy K <= M < P. Also the ceiling of
                 an annealed schedule. Not allowed without joint matrices.
             root_joint: Designates a root influence, one joint whose transforms
@@ -697,6 +782,13 @@ class SkinCompressor:
                 mesh centre, so its rotation is directly the joint's local
                 rotation. Default False. This changes which coefficients the
                 delta budget keeps, which can cost accuracy.
+            weight_init: Where the skinning weights start. "distance" builds
+                them from each vertex's distance to the joints (see
+                :func:`distance_weights`) and puts vertices no shape moves on
+                the root; "noise" starts from tiny random values and lets the
+                first steps pick the joints. None (default) means "distance"
+                with rest_joint_matrices and "noise" without. "distance" is
+                not allowed without joint matrices.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -708,7 +800,8 @@ class SkinCompressor:
                 joint_parents is given without joint matrices, with the wrong
                 length, with invalid or cyclic parents, or with a designated
                 root joint that has a parent; if deltas_about_joints is set
-                without joint_parents.
+                without joint_parents; if weight_init is unknown or "distance"
+                without joint matrices.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -794,6 +887,9 @@ class SkinCompressor:
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
         self.init_weight = init_weight
         self.power = power
+        self.weight_init = _resolve_weight_init(
+            weight_init, has_joint_matrices=self.rest_joint_matrices_3x4 is not None
+        )
         self.candidate_joints_per_vertex = _resolve_candidate_joints(
             candidate_joints_per_vertex,
             has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
@@ -831,6 +927,7 @@ class SkinCompressor:
         self.L: torch.Tensor | None = None
         self.rest_pose: torch.Tensor | None = None
         self.candidate_mask: torch.Tensor | None = None
+        self.geodesic_distances: np.ndarray | None = None
         self.transform_mask: torch.Tensor | None = None
         self.optimizer: torch.optim.Adam | None = None
 
@@ -957,17 +1054,7 @@ class SkinCompressor:
         if self.transform_mask is not None:
             B_rt.data *= self.transform_mask
 
-        # W PxN (numBones x numVertices) weights one per vertex per bone
-        W = (
-            (1e-8 * torch.randn(self.number_of_bones, N))
-            .clone()
-            .float()
-            .to(self.device)
-        )
-        if self.candidate_mask is not None:
-            W *= self.candidate_mask
-        if self.root_joint is not None:
-            W[self.root_joint] = _ROOT_WEIGHT_FLOOR
+        W = self._initial_weights(N)  # (P', N), one weight per vertex per bone
         W.requires_grad_()
 
         for index, phase in enumerate(self.schedule, start=1):
@@ -1186,14 +1273,9 @@ class SkinCompressor:
         """
         if self.candidate_joints_per_vertex is None:
             return None
-        if self.rest_joint_matrices_3x4 is None:
-            raise RuntimeError("candidate_joints_per_vertex is set without joints")
-        distances = geodesic_joint_distances(
-            self.model_data.rest_verts,
-            self.model_data.rest_faces,
-            self.rest_joint_matrices_3x4[:, :3, 3],
+        mask = candidate_joint_mask(
+            self._joint_distances(), self.candidate_joints_per_vertex
         )
-        mask = candidate_joint_mask(distances, self.candidate_joints_per_vertex)
         mask_tensor = torch.from_numpy(mask).to(self.device)
 
         # Add root row (all true) only for synthetic root
@@ -1202,6 +1284,63 @@ class SkinCompressor:
             root_row = torch.ones(1, n_verts, dtype=torch.bool, device=self.device)
             mask_tensor = torch.cat([mask_tensor, root_row], dim=0)
         return mask_tensor
+
+    def _joint_distances(self) -> np.ndarray:
+        """Geodesic distance from every joint to every vertex, computed once.
+
+        Returns:
+            Distances of shape (P, N) for the supplied joints (the synthetic
+            root, if any, is not included).
+
+        Raises:
+            RuntimeError: If no joint matrices are held.
+        """
+        if self.rest_joint_matrices_3x4 is None:
+            raise RuntimeError("joint distances need rest_joint_matrices")
+        if self.geodesic_distances is None:
+            self.geodesic_distances = geodesic_joint_distances(
+                self.model_data.rest_verts,
+                self.model_data.rest_faces,
+                self.rest_joint_matrices_3x4[:, :3, 3],
+            )
+        return self.geodesic_distances
+
+    def _initial_weights(self, n_verts: int) -> torch.Tensor:
+        """Builds the starting weights according to weight_init.
+
+        Args:
+            n_verts: Number of vertices N.
+
+        Returns:
+            Float tensor on self.device, shape (P', N): tiny noise inside the
+            candidate mask for "noise", or the distance bind of
+            :func:`distance_weights` for "distance", with static vertices
+            fully on the root. The root row, if any, is at least its floor.
+        """
+        if self.weight_init == "distance":
+            start = distance_weights(self._joint_distances(), self.max_influences)
+            if start.shape[0] < self.number_of_bones:  # synthetic root row
+                start = np.vstack([start, np.zeros((1, n_verts))])
+            if self.root_joint is not None:
+                static = static_vertex_mask(self.model_data.deltas)
+                start[:, static] = 0.0
+                start[self.root_joint, static] = 1.0
+                print(
+                    f"initial weights: distance bind over the {self.max_influences} "
+                    f"nearest joints; {int(static.sum())} static vertices start on the root"
+                )
+            W = torch.from_numpy(start).float().to(self.device)  # noqa: N806
+        else:
+            W = (
+                (1e-8 * torch.randn(self.number_of_bones, n_verts))
+                .float()
+                .to(self.device)
+            )  # noqa: N806
+        if self.candidate_mask is not None:
+            W *= self.candidate_mask
+        if self.root_joint is not None:
+            W[self.root_joint].clamp_(min=_ROOT_WEIGHT_FLOOR)
+        return W
 
     def _report_joint_coverage(self, Wn: torch.Tensor) -> None:  # noqa: N803
         """Prints how many vertices each joint drives and lists idle joints.
