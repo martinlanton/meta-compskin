@@ -207,14 +207,14 @@ class TestCliJointParents:
             joint_parents=np.array(_PARENTS),
         )
 
-    def test_parents_stored_in_the_model_file_are_used(self, tmp_path):
+    def test_the_hierarchy_is_off_unless_asked_for(self, tmp_path):
         output = tmp_path / "out.npz"
 
         main([str(self._model(tmp_path)), str(output), *_FAST, "--max-influences", "2"])
 
-        assert "jointParents" in np.load(output).files
+        assert "jointParents" not in np.load(output).files
 
-    def test_the_hierarchy_can_be_ignored(self, tmp_path):
+    def test_parents_stored_in_the_model_file_are_used_when_asked(self, tmp_path):
         output = tmp_path / "out.npz"
 
         main(
@@ -224,11 +224,11 @@ class TestCliJointParents:
                 *_FAST,
                 "--max-influences",
                 "2",
-                "--ignore-joint-hierarchy",
+                "--joint-hierarchy",
             ]
         )
 
-        assert "jointParents" not in np.load(output).files
+        assert "jointParents" in np.load(output).files
 
     def test_ignoring_joint_matrices_also_ignores_the_hierarchy(self, tmp_path):
         output = tmp_path / "out.npz"
@@ -240,6 +240,7 @@ class TestCliJointParents:
                 *_FAST,
                 "--max-influences",
                 "2",
+                "--joint-hierarchy",
                 "--number-of-bones",
                 "10",
                 "--ignore-joint-matrices",
@@ -250,22 +251,22 @@ class TestCliJointParents:
 
 
 class TestPipelineCommand:
-    def test_the_hierarchy_is_used_by_default(self, tmp_path):
+    def test_the_hierarchy_is_off_by_default(self, tmp_path):
         command = compression_command(
             "python", tmp_path / "m.npz", tmp_path / "c.npz", CompressionSettings()
         )
 
-        assert "--ignore-joint-hierarchy" not in command
+        assert "--joint-hierarchy" not in command
 
-    def test_the_hierarchy_can_be_switched_off(self, tmp_path):
+    def test_the_hierarchy_can_be_switched_on(self, tmp_path):
         command = compression_command(
             "python",
             tmp_path / "m.npz",
             tmp_path / "c.npz",
-            CompressionSettings(use_joint_hierarchy=False),
+            CompressionSettings(use_joint_hierarchy=True),
         )
 
-        assert "--ignore-joint-hierarchy" in command
+        assert "--joint-hierarchy" in command
 
 
 class TestNearestListedAncestors:

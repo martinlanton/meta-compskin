@@ -117,7 +117,7 @@ class TestRootJoint:
             root_joint="new",
         )
 
-        assert compressor.candidate_joints_per_vertex == 16  # min(2 * 8, 40 - 1)
+        assert compressor.candidate_joints_per_vertex == 10  # min(8 + 2, 40 - 1)
 
     def test_warm_up_disabled_shortens_schedule(self, grid_model_data):
         compressor_with_warmup = SkinCompressor(
@@ -220,6 +220,7 @@ class TestIntegration:
             candidate_joints_per_vertex=3,
             total_nnz_B_rt=100,
             root_joint="none",  # No root - should fail
+            weight_init="noise",  # the decay to zero needs the noise start
         )
 
         # Should raise RuntimeError from _validate_weights due to NaN/empty columns
@@ -525,13 +526,15 @@ class TestSkinCompressorSchedule:
 class TestCandidateJoints:
     _FAST = {"iterations": 300, "total_nnz_B_rt": 100}
 
-    def test_default_is_twice_the_influences_with_joint_matrices(self, grid_model_data):
+    def test_default_is_two_more_than_the_influences_with_joint_matrices(
+        self, grid_model_data
+    ):
         compressor = SkinCompressor(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(40),
         )
 
-        assert compressor.candidate_joints_per_vertex == 16
+        assert compressor.candidate_joints_per_vertex == 10
 
     def test_default_stays_below_the_bone_count(self, grid_model_data):
         compressor = SkinCompressor(
@@ -597,7 +600,7 @@ class TestCandidateJoints:
             total_nnz_B_rt=100,
         )
 
-        assert [p.max_influences for p in compressor.schedule] == [16, 8]
+        assert [p.max_influences for p in compressor.schedule] == [10, 8]
 
     def test_run_only_weights_joints_near_each_vertex(self, grid_model_data, tmp_path):
         positions = _grid_joint_positions(10)

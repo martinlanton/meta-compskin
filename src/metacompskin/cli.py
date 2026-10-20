@@ -18,10 +18,12 @@ If the model file carries ``rest_joint_matrices`` (the exporter writes them
 when given ``joints``) they are used unless ``--ignore-joint-matrices`` is
 passed; each joint then only drives the vertices nearest to it along the mesh,
 ``--candidate-joints-per-vertex`` sets how many joints a vertex may use (0 turns
-the filter off). If it also carries ``joint_parents`` (the exporter writes them
-with the joints) the deltas are solved through that joint hierarchy, so a child
-joint follows its parent; ``--ignore-joint-hierarchy`` solves every joint on its
-own instead. Pass ``--warm-up false`` to disable the unnormalised warm-up
+the filter off). With joints the weights start from each vertex's distance to
+them (``--weight-init noise`` starts from random values instead). If the file
+also carries ``joint_parents`` (the exporter writes them with the joints),
+``--joint-hierarchy`` solves the deltas through that hierarchy, so a child joint
+follows its parent; by default every joint is solved on its own. Pass
+``--warm-up false`` to disable the unnormalised warm-up
 phase and run only normalised training (useful for research). CUDA is used
 automatically when this interpreter's torch sees a GPU.
 """
@@ -122,9 +124,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not use rest_joint_matrices stored in the model file.",
     )
     parser.add_argument(
-        "--ignore-joint-hierarchy",
+        "--joint-hierarchy",
         action="store_true",
-        help="Do not use joint_parents stored in the model file; solve every joint on its own.",
+        help="Solve through the joint_parents stored in the model file, so a child "
+        "joint follows its parent. Off by default: every joint is solved on its own.",
+    )
+    parser.add_argument(
+        "--weight-init",
+        choices=["noise", "distance"],
+        default=None,
+        help="Where the weights start: 'distance' (from each vertex's distance to the "
+        "joints; the default with joints) or 'noise' (random; the default without).",
     )
     parser.add_argument(
         "--deltas-about-joints",
@@ -168,12 +178,15 @@ def main(argv: list[str] | None = None) -> Path:
     settings = _compressor_settings(args)
     if not args.ignore_joint_matrices:
         settings["rest_joint_matrices"] = _stored_joint_matrices(model_path)
-        if (
-            settings["rest_joint_matrices"] is not None
-            and not args.ignore_joint_hierarchy
-        ):
-            settings["joint_parents"] = _stored_joint_parents(model_path)
-            if settings["joint_parents"] is not None and args.deltas_about_joints:
+        if settings["rest_joint_matrices"] is not None and args.joint_hierarchy:
+            parents = _stored_joint_parents(model_path)
+            if parents is None:
+                raise ValueError(
+                    "--joint-hierarchy needs joint_parents in the model file; "
+                    "export it again with the current exporter"
+                )
+            settings["joint_parents"] = parents
+            if args.deltas_about_joints:
                 settings["deltas_about_joints"] = True
 
     print(f"Compressing on {'cuda' if torch.cuda.is_available() else 'cpu'}")
@@ -206,6 +219,7 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "seed",
         "candidate_joints_per_vertex",
         "root_joint",
+        "weight_init",
     ):
         value = getattr(args, option, None)
         if value is not None:
