@@ -11,6 +11,7 @@ from metacompskin.maya_pipeline import (
     CompressionSettings,
     TorchProbe,
     candidate_interpreters,
+    compress_and_build_rig,
     compression_command,
     default_output_dir,
     detect_python_executable,
@@ -202,3 +203,12 @@ class TestDetectPythonExecutable:
         candidates = candidate_interpreters()
 
         assert candidates == [python]
+
+
+class TestRigAnimationOptions:
+    @pytest.mark.parametrize(
+        ("option", "value"), [("frame_step", 0), ("interpolation", "bezier")]
+    )
+    def test_invalid_options_fail_before_anything_runs(self, option, value):
+        with pytest.raises(ValueError, match=option):
+            compress_and_build_rig(**{option: value})

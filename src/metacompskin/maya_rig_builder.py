@@ -42,6 +42,7 @@ Example:
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from numbers import Integral
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -54,6 +55,8 @@ _REQUIRED_KEYS = ("rest", "quads", "weights", "restXform", "shapeXform")
 # scene mesh matches the compressed rest pose. Loose enough for float32
 # round-trips through Maya, tight enough to catch a re-ordered mesh.
 _REST_MATCH_TOLERANCE = 1e-4
+# Maya tangent types offered for the keys between two shapes.
+_INTERPOLATIONS = ("step", "linear", "spline", "clamped", "plateau", "auto", "flat")
 
 
 @dataclass(frozen=True)
@@ -326,6 +329,89 @@ def validate_shape_names(names: Sequence[str] | None, n_shapes: int) -> list[str
     return [str(name) for name in names]
 
 
+def shape_frames(
+    n_shapes: int, frame_step: int = 1, return_to_neutral: bool = False
+) -> list[int]:
+    """Gives the frame on which each shape is at full weight in a built rig.
+
+    The rig's animation keys a sequence of poses ``frame_step`` frames apart,
+    starting with the neutral pose on frame 0: every shape in turn, or with
+    ``return_to_neutral`` the neutral pose again after every shape (neutral,
+    shape 1, neutral, shape 2, ..., neutral).
+
+    Args:
+        n_shapes: Number of blendshapes S.
+        frame_step: Step from one keyed pose to the next, as in a slice:
+            1 keys every frame, 2 leaves one in-between frame between keys.
+            At least 1.
+        return_to_neutral: Key the neutral pose between shapes and at the end.
+
+    Returns:
+        S frame numbers, in shape order.
+
+    Raises:
+        ValueError: If ``frame_step`` is not an integer of at least 1.
+
+    Example:
+        >>> shape_frames(3)
+        [1, 2, 3]
+        >>> shape_frames(3, frame_step=2, return_to_neutral=True)
+        [2, 6, 10]
+    """
+    return [
+        time
+        for time, pose in _key_sequence(n_shapes, frame_step, return_to_neutral)
+        if pose > 0
+    ]
+
+
+def _key_sequence(
+    n_shapes: int, frame_step: int, return_to_neutral: bool
+) -> list[tuple[int, int]]:
+    """(frame, pose) of every keyed pose; pose 0 is neutral, k + 1 is shape k."""
+    _validate_frame_step(frame_step)
+    poses = [0]
+    for shape in range(1, n_shapes + 1):
+        poses += [shape, 0] if return_to_neutral else [shape]
+    return [(index * frame_step, pose) for index, pose in enumerate(poses)]
+
+
+def validate_key_layout(frame_step: int, interpolation: str) -> None:
+    """Checks the animation options of :func:`build_skinned_rig` up front.
+
+    Lets a longer pipeline fail before its slow steps rather than at the end.
+
+    Args:
+        frame_step: Frames from one shape to the next.
+        interpolation: Tangent type of the joint keys.
+
+    Raises:
+        ValueError: If ``frame_step`` is not an integer of at least 1, or
+            ``interpolation`` is not one of the supported tangent types.
+    """
+    _validate_frame_step(frame_step)
+    _tangent_types(interpolation)
+
+
+def _validate_frame_step(frame_step: int) -> None:
+    if isinstance(frame_step, bool) or not isinstance(frame_step, Integral):
+        raise ValueError(f"frame_step must be an integer, got {frame_step!r}.")
+    if frame_step < 1:
+        raise ValueError(f"frame_step must be at least 1, got {frame_step}.")
+
+
+def _tangent_types(interpolation: str) -> tuple[str, str]:
+    """Maya's in and out tangent types for the keys of an interpolation."""
+    if interpolation not in _INTERPOLATIONS:
+        raise ValueError(
+            f"interpolation must be one of {', '.join(_INTERPOLATIONS)}; "
+            f"got {interpolation!r}."
+        )
+    if interpolation == "step":
+        return "linear", "step"
+    return interpolation, interpolation
+
+
 @dataclass(frozen=True)
 class MayaSkinRig:
     """Names of the nodes created by :func:`build_skinned_rig`.
@@ -337,7 +423,8 @@ class MayaSkinRig:
         joints: Virtual joint names, in the order of the weight columns.
         drivers: Animated transform above each joint, same order as ``joints``.
         skin_cluster: The skinCluster node bound to ``mesh``.
-        shape_names: Blendshape names, in frame order (frame ``k + 1``).
+        shape_names: Blendshape names, in the order they are keyed (see
+            :func:`shape_frames`).
     """
 
     mesh: str
@@ -348,12 +435,16 @@ class MayaSkinRig:
     shape_names: list[str]
 
 
-def build_skinned_rig(
+def build_skinned_rig(  # noqa: PLR0913
     compressed_path: str | Path,
     mesh: str | None = None,
     shape_names: Sequence[str] | None = None,
     duplicate_mesh: bool = True,
     name: str = "compskin",
+    *,
+    frame_step: int = 1,
+    interpolation: str = "step",
+    return_to_neutral: bool = False,
 ) -> MayaSkinRig:
     """Builds joints, skin cluster and per-shape animation from a compressed file.
 
@@ -370,9 +461,19 @@ def build_skinned_rig(
     at the weight-averaged position of the vertices it influences.
 
     Frame 0 of the resulting animation is the neutral pose and frame ``k + 1``
-    shows blendshape ``k`` at full weight. Keys use stepped tangents so no two
-    shapes blend between frames. The root joint gets a keyed ``currentShape``
-    enum attribute naming the shape shown on each frame.
+    shows blendshape ``k`` at full weight, with stepped keys so no two shapes
+    blend. Three keyword arguments change that layout to match another
+    pipeline: ``frame_step`` is the step from one keyed pose to the next (1
+    keys every frame, 2 leaves one in-between frame), ``return_to_neutral`` keys
+    the neutral pose again after every shape, and ``interpolation`` sets the
+    tangents and so what the frames between two keyed poses show: ``"step"``
+    holds each pose, ``"linear"``, ``"spline"`` and Maya's other tangent types
+    blend from one pose to the next, showing the joints' motion. For example
+    ``frame_step=2, interpolation="spline", return_to_neutral=True`` gives
+    neutral on frame 0, shape 1 on frame 2, neutral on 4, shape 2 on 6, and so
+    on, with spline blends on the odd frames (see :func:`shape_frames`). The
+    root joint gets a keyed ``currentShape`` enum attribute naming the pose on
+    each keyed frame.
 
     The animation is keyed on a driver transform above each joint, not on the
     joint itself, because a Maya joint drops the shear component of the
@@ -387,24 +488,34 @@ def build_skinned_rig(
         duplicate_mesh: Skin a duplicate of the mesh (True, default) or the
             mesh itself (False; it must have no deformers).
         name: Prefix for every node created.
+        frame_step: Step from one keyed pose to the next, as in a slice:
+            1 (default) keys every frame, 2 leaves one in-between frame
+            between keys. The neutral pose is always on frame 0.
+        interpolation: Tangent type of the joint keys: ``"step"`` (default),
+            ``"linear"``, ``"spline"``, ``"clamped"``, ``"plateau"``,
+            ``"auto"`` or ``"flat"``.
+        return_to_neutral: Key the neutral pose after every shape, so the
+            animation goes neutral, shape, neutral, next shape (default False).
 
     Returns:
         The names of the created nodes.
 
     Raises:
         RuntimeError: If not running inside Maya or mayapy.
-        ValueError: If the selection is not a single mesh, the mesh does not
-            match the compressed rest pose, ``shape_names`` has the wrong
-            length, or ``duplicate_mesh`` is False and the mesh already has
-            deformers.
+        ValueError: If ``frame_step`` or ``interpolation`` is invalid, the
+            selection is not a single mesh, the mesh does not match the
+            compressed rest pose, ``shape_names`` has the wrong length, or
+            ``duplicate_mesh`` is False and the mesh already has deformers.
 
     References:
         Paper Section 3, Equation 7; user guide "Maya rig workflow" section 4.
     """
+    validate_key_layout(frame_step, interpolation)
     api = _import_maya()
     cmds = api.cmds
     skin = CompressedSkin.from_npz(compressed_path)
     names = validate_shape_names(shape_names, skin.n_shapes)
+    keys = _key_sequence(skin.n_shapes, frame_step, return_to_neutral)
 
     source = _resolve_mesh_transform(api, mesh)
     if not duplicate_mesh:
@@ -420,13 +531,11 @@ def build_skinned_rig(
     skin_cluster = _bind(api, target, joints, skin, name)
 
     frames = frame_joint_matrices(skin.delta_transforms(), bind, rest_to_scene)
-    _key_driver_frames(api, drivers, frames)
-    _add_current_shape_attribute(api, root, names)
+    _key_driver_frames(api, drivers, frames, keys, _tangent_types(interpolation))
+    _add_current_shape_attribute(api, root, names, keys)
+    end = keys[-1][0]
     cmds.playbackOptions(
-        animationStartTime=0,
-        minTime=0,
-        maxTime=skin.n_shapes,
-        animationEndTime=skin.n_shapes,
+        animationStartTime=0, minTime=0, maxTime=end, animationEndTime=end
     )
     cmds.currentTime(0)
     cmds.select(target)
@@ -734,41 +843,49 @@ def _set_skin_weights(
 
 
 def _key_driver_frames(
-    api: _MayaApi, drivers: list[str], frames: npt.NDArray[np.floating]
+    api: _MayaApi,
+    drivers: list[str],
+    frames: npt.NDArray[np.floating],
+    keys: list[tuple[int, int]],
+    tangents: tuple[str, str],
 ) -> None:
-    """Keys every driver's transform channels on every frame, stepped.
+    """Keys every driver's transform channels on every keyed frame.
 
     Args:
         api: The Maya modules.
         drivers: Driver transform names, in bone order.
-        frames: Joint world matrices, shape (S + 1, P, 4, 4).
+        frames: Joint world matrices of the neutral pose then of each shape,
+            shape (S + 1, P, 4, 4).
+        keys: (frame, index into ``frames``) of every keyed pose.
+        tangents: In and out tangent types of every key.
     """
     cmds = api.cmds
     channels = ["translate", "rotate", "scale", "shear"]
     transforms = [_transform_fn(api, driver) for driver in drivers]
-    for frame, joint_matrices in enumerate(frames):
+    for time, pose in keys:
         for driver, fn_transform, matrix in zip(
-            drivers, transforms, joint_matrices, strict=True
+            drivers, transforms, frames[pose], strict=True
         ):
             _set_local_matrix(api, fn_transform, matrix)
             cmds.setKeyframe(
                 driver,
                 attribute=channels,
-                time=frame,
-                inTangentType="linear",
-                outTangentType="step",
+                time=time,
+                inTangentType=tangents[0],
+                outTangentType=tangents[1],
             )
 
 
 def _add_current_shape_attribute(
-    api: _MayaApi, root: str, shape_names: list[str]
+    api: _MayaApi, root: str, shape_names: list[str], keys: list[tuple[int, int]]
 ) -> None:
-    """Adds a keyed enum attribute on the root naming the shape on each frame.
+    """Adds a keyed enum attribute on the root naming the pose on each frame.
 
     Args:
         api: The Maya modules.
         root: Root joint name.
-        shape_names: Blendshape names, in frame order.
+        shape_names: Blendshape names, in shape order.
+        keys: (frame, pose) of every keyed pose; pose 0 is neutral ("rest").
     """
     cmds = api.cmds
     labels = ["rest", *(_enum_safe(name) for name in shape_names)]
@@ -779,12 +896,12 @@ def _add_current_shape_attribute(
         enumName=":".join(labels),
         keyable=True,
     )
-    for frame in range(len(labels)):
+    for time, pose in keys:
         cmds.setKeyframe(
             root,
             attribute="currentShape",
-            time=frame,
-            value=frame,
+            time=time,
+            value=pose,
             inTangentType="linear",
             outTangentType="step",
         )

@@ -342,9 +342,44 @@ What it does:
   shape `k` at 100%. Tangents are stepped, so scrubbing never blends two shapes. The
   root gets a keyed `currentShape` enum attribute that shows the shape name in the
   channel box; pass `shape_names` (the exporter writes them into the model file) or
-  accept the `shape_000` placeholders.
-- **Sets the timeline** to `0 .. S` and returns the node names (`rig.mesh`,
-  `rig.root`, `rig.joints`, `rig.drivers`, `rig.skin_cluster`).
+  accept the `shape_000` placeholders. Three keyword arguments change this layout to
+  match another pipeline (below).
+- **Sets the timeline** to cover every shape (`0 .. S` by default) and returns the
+  node names (`rig.mesh`, `rig.root`, `rig.joints`, `rig.drivers`,
+  `rig.skin_cluster`).
+
+**Frame layout and interpolation.** Pipelines lay shape sequences out
+differently. A common one goes back to the neutral pose between shapes and
+leaves a blended frame between every two keys, which shows how the skin, and
+here the joints, move into each shape and out of it. Three keyword arguments
+reproduce such layouts:
+
+```python
+rig = build_skinned_rig(
+    "D:/exports/head_compressed.npz",
+    shape_names=names,
+    frame_step=2,  # a key every second frame, one in-between frame
+    interpolation="spline",  # blend on the frames in between
+    return_to_neutral=True,  # neutral, shape 1, neutral, shape 2, ..., neutral
+)
+```
+
+This keys the neutral pose on frame 0, shape 1 on frame 2, the neutral pose on
+frame 4, shape 2 on frame 6, and so on, ending on the neutral pose, with spline
+blends on the odd frames.
+
+| Argument | Default | What it does |
+|----------|---------|--------------|
+| `frame_step` | 1 | Step from one keyed pose to the next, as in a Python slice: 1 keys every frame, 2 leaves one in-between frame between keys. Must be at least 1. The neutral pose is always on frame 0. |
+| `return_to_neutral` | `False` | Key the neutral pose again after every shape and at the end. |
+| `interpolation` | `"step"` | Tangents of the joint keys: `"step"` holds each pose until the next; `"linear"`, `"spline"`, `"clamped"`, `"plateau"`, `"auto"` or `"flat"` blend between them. |
+
+`shape_frames(n_shapes, frame_step, return_to_neutral)` lists the frame of each
+shape for scripts that need it. On the keyed frames the result is the same
+whatever the layout. In between, the joints blend their translate, rotate,
+scale and shear channels, which is close to, but not exactly, the matching mix
+of the two poses; key your original blendShape weights with the same layout to
+compare them.
 
 The mesh may sit anywhere in the scene; the builder folds its world matrix and the
 centring offset (section 3.6) into the joint animation. Scrub the timeline with the
@@ -408,6 +443,9 @@ they matter to a rigger:
 | `power` | 2 | Which error the solver minimises. 2 minimises the average error; 12 minimises the worst error at the cost of smoothness and needs more iterations and joints. |
 | `init_weight` | 0.001 | Size of the random starting values. Rarely worth touching. |
 | `name` | `compskin` | Prefix for every node the build creates (`compskin_root`, `compskin_joint_000`, `compskin_skinned`, `compskin_skinCluster`). Change it to build several results side by side. |
+| `frame_step` | 1 | Step from one keyed pose to the next in the rig's animation: 1 keys every frame, 2 leaves one in-between frame (section 4.1). |
+| `return_to_neutral` | `False` | Key the neutral pose after every shape, so the animation goes neutral, shape, neutral, next shape (section 4.1). |
+| `interpolation` | `step` | Tangents of the rig's joint keys: `step` holds each pose, `spline` (or another Maya tangent type) blends between them (section 4.1). |
 
 The compressor settings are the same as those of `SkinCompressor` itself
 ([Compressing](compressing.md#settings)). Leaving one out means the compressor's

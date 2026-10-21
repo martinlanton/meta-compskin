@@ -108,8 +108,10 @@ def test_one_joint_per_bone_each_under_its_driver_in_a_flat_hierarchy(maya_repor
     assert set(scenario["driver_parents"]) == {scenario["root"]}
 
 
-@pytest.mark.parametrize("name", ["duplicate", "custom_placement", "selected"])
-def test_skinned_mesh_matches_reference_on_every_frame(maya_report, name):
+@pytest.mark.parametrize(
+    "name", ["duplicate", "custom_placement", "selected", "spline_back_to_neutral"]
+)
+def test_skinned_mesh_matches_reference_on_every_shape_frame(maya_report, name):
     scenario = maya_report[name]
     world = _to_column_matrices([scenario["source_world_matrix"]])[0]
     scene = maya_report["expected_centred_frames"] + maya_report["rest_verts"].mean(
@@ -175,3 +177,31 @@ def test_timeline_spans_rest_frame_and_every_shape(maya_report):
 
 def test_skin_cluster_limits_influences_to_the_compressed_budget(maya_report):
     assert maya_report["duplicate"]["max_influences"] <= 8
+
+
+def test_keys_hold_each_shape_by_default(maya_report):
+    assert maya_report["duplicate"]["tangent_types"] == ["linear", "step"]
+
+
+def test_returning_to_neutral_puts_the_neutral_pose_between_shapes(maya_report):
+    scenario = maya_report["spline_back_to_neutral"]
+    n_shapes = len(maya_report["shape_names"])
+    neutral = np.array(scenario["timeline"])[0::4]  # frames 0, 4, 8, ..., 4S
+
+    assert scenario["playback_range"] == [0, 4 * n_shapes]
+    assert scenario["current_shape"] == ["rest", *maya_report["shape_names"]]
+    assert set(scenario["timeline_shape"][0::4]) == {"rest"}
+    np.testing.assert_allclose(neutral, neutral[[0] * len(neutral)], atol=_ATOL)
+
+
+def test_spline_interpolation_blends_the_frames_between_keys(maya_report):
+    scenario = maya_report["spline_back_to_neutral"]
+    timeline = np.array(scenario["timeline"])  # (4S + 1, N, 3)
+    keyed, between = timeline[0::2], timeline[1::2]
+
+    away_from_previous = np.abs(between - keyed[:-1]).max(axis=(1, 2))
+    away_from_next = np.abs(between - keyed[1:]).max(axis=(1, 2))
+
+    assert scenario["tangent_types"] == ["spline"]
+    assert (away_from_previous > _ATOL).all()
+    assert (away_from_next > _ATOL).all()

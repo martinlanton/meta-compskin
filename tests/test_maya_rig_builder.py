@@ -13,9 +13,11 @@ import pytest
 
 from metacompskin.maya_rig_builder import (
     CompressedSkin,
+    build_skinned_rig,
     frame_joint_matrices,
     joint_bind_matrices,
     rest_to_scene_matrix,
+    shape_frames,
     validate_shape_names,
     weighted_joint_centroids,
 )
@@ -234,3 +236,28 @@ class TestJointPlacement:
         expected = weighted_joint_centroids(skin.weights, scene_points)
         np.testing.assert_allclose(bind[:, :3, 3], expected, atol=1e-6)
         np.testing.assert_allclose(bind[:, :3, :3], [np.eye(3)] * _N_BONES)
+
+
+class TestShapeFrames:
+    def test_one_shape_per_frame_after_the_neutral_frame_by_default(self):
+        assert shape_frames(3) == [1, 2, 3]
+
+    def test_a_frame_step_spaces_the_keyed_poses(self):
+        assert shape_frames(3, frame_step=2) == [2, 4, 6]
+
+    def test_returning_to_neutral_puts_a_neutral_pose_between_shapes(self):
+        assert shape_frames(3, frame_step=2, return_to_neutral=True) == [2, 6, 10]
+
+    def test_rejects_a_frame_step_below_one(self):
+        with pytest.raises(ValueError, match="frame_step"):
+            shape_frames(3, frame_step=0)
+
+
+class TestBuildSkinnedRigArguments:
+    def test_rejects_a_frame_step_below_one_before_touching_maya(self, tmp_path):
+        with pytest.raises(ValueError, match="frame_step"):
+            build_skinned_rig(tmp_path / "compressed.npz", frame_step=0)
+
+    def test_rejects_an_unknown_interpolation_before_touching_maya(self, tmp_path):
+        with pytest.raises(ValueError, match="interpolation.*spline"):
+            build_skinned_rig(tmp_path / "compressed.npz", interpolation="bezier")
