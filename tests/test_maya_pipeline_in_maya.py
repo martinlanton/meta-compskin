@@ -96,6 +96,15 @@ def test_rig_is_built_on_a_duplicate_and_matches_the_compressed_result(
     np.testing.assert_allclose(actual, expected, atol=_ATOL)
 
 
+def test_rig_keys_follow_the_requested_frame_step_and_interpolation(
+    pipeline_report,
+):
+    outcome = pipeline_report["pipeline"]
+
+    assert outcome["playback_end"] == 4 * len(pipeline_report["shape_names"])
+    assert outcome["tangent_types"] == ["spline"]
+
+
 def test_frames_are_labelled_with_the_blendshape_target_names(pipeline_report):
     outcome = pipeline_report["pipeline"]
 

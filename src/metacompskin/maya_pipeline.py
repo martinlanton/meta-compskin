@@ -45,7 +45,11 @@ import numpy as np
 
 import metacompskin
 from metacompskin.maya_exporter import MayaBlendshapeExporter
-from metacompskin.maya_rig_builder import MayaSkinRig, build_skinned_rig
+from metacompskin.maya_rig_builder import (
+    MayaSkinRig,
+    build_skinned_rig,
+    validate_key_layout,
+)
 
 ENV_PYTHON = "METACOMPSKIN_PYTHON"
 _LOG_TAIL_LINES = 30
@@ -154,6 +158,9 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     use_joint_hierarchy: bool = False,
     weight_init: str | None = None,
     name: str = "compskin",
+    frame_step: int = 1,
+    interpolation: str = "step",
+    return_to_neutral: bool = False,
 ) -> PipelineResult:
     """Exports the mesh, compresses it in a subprocess and builds the rig.
 
@@ -198,16 +205,25 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         weight_init: Where the weights start, ``"distance"`` or ``"noise"``
             (default None: distance with ``joints``, noise without).
         name: Prefix for every node the rig builder creates.
+        frame_step: Step from one keyed pose to the next in the rig's
+            animation, as in a slice: 1 (default) keys every frame, 2 leaves
+            one in-between frame between keys.
+        interpolation: Tangent type of the rig's joint keys, ``"step"``
+            (default, each pose held) or a blending one such as ``"spline"``.
+        return_to_neutral: Key the neutral pose after every shape (default
+            False). See :func:`build_skinned_rig` for the resulting layout.
 
     Returns:
         The file paths and the built rig.
 
     Raises:
-        ValueError: If no interpreter is configured, or the mesh cannot be
-            determined unambiguously.
+        ValueError: If ``frame_step`` or ``interpolation`` is invalid, no
+            interpreter is configured, or the mesh cannot be determined
+            unambiguously.
         FileNotFoundError: If the interpreter does not exist.
         RuntimeError: If the compression subprocess fails.
     """
+    validate_key_layout(frame_step, interpolation)
     cmds = _import_cmds()
     python = resolve_python_executable(python_executable)
     settings = CompressionSettings(
@@ -243,7 +259,13 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
         shape_names = [str(shape) for shape in archive["shape_names"]]
     with _blendshapes_disabled(cmds, source):
         rig = build_skinned_rig(
-            compressed_path, mesh=source, shape_names=shape_names, name=name
+            compressed_path,
+            mesh=source,
+            shape_names=shape_names,
+            name=name,
+            frame_step=frame_step,
+            interpolation=interpolation,
+            return_to_neutral=return_to_neutral,
         )
     return PipelineResult(
         source_mesh=source,

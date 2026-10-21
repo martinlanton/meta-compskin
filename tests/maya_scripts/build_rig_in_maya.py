@@ -7,7 +7,7 @@ Run by tests/test_maya_rig_builder_in_maya.py through a mayapy subprocess::
 
 ``scene_input.npz`` holds ``rest_verts`` (N, 3), ``faces`` (F, 4) and
 ``shape_names`` (S,). ``compressed_custom.npz`` is the same archive with
-user-supplied ``restXform`` matrices. Four scenarios run in fresh scenes; the
+user-supplied ``restXform`` matrices. Five scenarios run in fresh scenes; the
 pytest side computes the expected values and asserts.
 """
 
@@ -23,6 +23,7 @@ maya.standalone.initialize()
 from maya import cmds  # noqa: E402
 from maya_test_helpers import (  # noqa: E402
     create_mesh,
+    driver_tangent_types,
     new_scene_with_source,
     sample_rig,
     skin_clusters_on,
@@ -32,10 +33,10 @@ from maya_test_helpers import (  # noqa: E402
 from metacompskin.maya_rig_builder import build_skinned_rig  # noqa: E402
 
 
-def describe_rig(rig, source: str, n_frames: int) -> dict:
+def describe_rig(rig, source: str, times) -> dict:
     cmds.currentTime(0)
     bind_matrices = [world_matrix(joint) for joint in rig.joints]
-    frames, current_shape = sample_rig(rig, n_frames)
+    frames, current_shape = sample_rig(rig, times)
     return {
         "mesh": rig.mesh.split("|")[-1],
         "root": rig.root,
@@ -54,19 +55,37 @@ def describe_rig(rig, source: str, n_frames: int) -> dict:
             cmds.playbackOptions(q=True, minTime=True),
             cmds.playbackOptions(q=True, maxTime=True),
         ],
+        "tangent_types": driver_tangent_types(rig),
     }
 
 
 def run_duplicate(compressed: Path, scene, names: list[str]) -> dict:
     source = new_scene_with_source(scene)
     rig = build_skinned_rig(compressed, shape_names=names)
-    return describe_rig(rig, source, len(names) + 1)
+    return describe_rig(rig, source, range(len(names) + 1))
+
+
+def run_spline_back_to_neutral(compressed: Path, scene, names: list[str]) -> dict:
+    """Neutral on 0, shape 1 on 2, neutral on 4, shape 2 on 6, ..., neutral last."""
+    source = new_scene_with_source(scene)
+    rig = build_skinned_rig(
+        compressed,
+        shape_names=names,
+        frame_step=2,
+        interpolation="spline",
+        return_to_neutral=True,
+    )
+    report = describe_rig(rig, source, [0, *range(2, 4 * len(names), 4)])
+    report["timeline"], report["timeline_shape"] = sample_rig(
+        rig, range(4 * len(names) + 1)
+    )
+    return report
 
 
 def run_selected(compressed: Path, scene, names: list[str]) -> dict:
     source = new_scene_with_source(scene)
     rig = build_skinned_rig(compressed, shape_names=names, duplicate_mesh=False)
-    return describe_rig(rig, source, len(names) + 1)
+    return describe_rig(rig, source, range(len(names) + 1))
 
 
 def run_selected_with_blendshape(compressed: Path, scene, names: list[str]) -> dict:
@@ -97,6 +116,9 @@ def main(compressed: Path, compressed_custom: Path, scene_input: Path, report: P
             {
                 "duplicate": run_duplicate(compressed, scene, names),
                 "custom_placement": run_duplicate(compressed_custom, scene, names),
+                "spline_back_to_neutral": run_spline_back_to_neutral(
+                    compressed, scene, names
+                ),
                 "selected": run_selected(compressed, scene, names),
                 "selected_with_blendshape": run_selected_with_blendshape(
                     compressed, scene, names

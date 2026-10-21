@@ -25,6 +25,7 @@ from maya import cmds  # noqa: E402
 from maya_test_helpers import (  # noqa: E402
     SOURCE_NAME,
     create_mesh,
+    driver_tangent_types,
     new_scene_with_source,
     sample_rig,
     skin_clusters_on,
@@ -57,8 +58,11 @@ def run_pipeline(scene, python: str, output_dir: Path) -> dict:
         number_of_bones=10,
         max_influences=3,
         total_nnz_B_rt=100,
+        frame_step=2,
+        interpolation="spline",
+        return_to_neutral=True,
     )
-    frames, current_shape = sample_rig(result.rig, len(targets) + 1)
+    frames, current_shape = sample_rig(result.rig, [0, *range(2, 4 * len(targets), 4)])
     return {
         "source_mesh": result.source_mesh,
         "model_path": str(result.model_path),
@@ -67,6 +71,8 @@ def run_pipeline(scene, python: str, output_dir: Path) -> dict:
         "n_joints": len(result.rig.joints),
         "frames": frames,
         "current_shape": current_shape,
+        "tangent_types": driver_tangent_types(result.rig),
+        "playback_end": cmds.playbackOptions(q=True, maxTime=True),
         "source_world_matrix": world_matrix(source),
         "source_skin_clusters": skin_clusters_on(source),
         "envelope_after": cmds.getAttr(f"{blendshape}.envelope"),

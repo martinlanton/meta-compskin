@@ -45,13 +45,23 @@ def new_scene_with_source(scene) -> str:
     return source
 
 
-def sample_rig(rig, n_frames: int) -> tuple[list, list]:
-    """World points of the rig mesh and the current shape label, per frame."""
+def sample_rig(rig, times) -> tuple[list, list]:
+    """World points of the rig mesh and the current shape label, at each time."""
     frames = []
     current_shape = []
-    for frame in range(n_frames):
+    for frame in times:
         cmds.currentTime(frame)
         frames.append(world_points(rig.mesh))
         current_shape.append(cmds.getAttr(f"{rig.root}.currentShape", asString=True))
     cmds.currentTime(0)
     return frames, current_shape
+
+
+def driver_tangent_types(rig) -> list[str]:
+    """Distinct in and out tangent types of every curve keying the drivers."""
+    curves = cmds.listConnections(rig.drivers, type="animCurve", source=True) or []
+    types = set()
+    for curve in curves:
+        types.update(cmds.keyTangent(curve, q=True, inTangentType=True))
+        types.update(cmds.keyTangent(curve, q=True, outTangentType=True))
+    return sorted(types)

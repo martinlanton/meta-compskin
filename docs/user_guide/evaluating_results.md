@@ -81,8 +81,9 @@ Three ways to look:
    for 5 mm and above.
 3. **In the rig.** Select the head in Maya and call
    `build_skinned_rig("exports/head_compressed.npz")`: it skins a duplicate and
-   keys one blendshape per frame, so scrubbing the timeline steps through every
-   shape next to the original blendShape mesh
+   keys one blendshape per frame (other layouts, such as neutral between
+   shapes with spline blends, are options), so scrubbing the timeline steps
+   through every shape next to the original blendShape mesh
    ([Maya rig workflow](maya_rig_workflow.md), section 4).
 
 ## Full animations
