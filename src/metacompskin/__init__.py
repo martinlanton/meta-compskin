@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from metacompskin.model_data import BlendshapeModelData, MayaBlendshapeModelData
     from metacompskin.model_fit import SkinCompressor
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 _EXPORTS = {
     "AnimationFrameGenerator": "metacompskin.animation_generator",

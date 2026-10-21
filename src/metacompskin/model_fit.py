@@ -13,6 +13,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import combinations
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,9 @@ _ROOT_WEIGHT_FLOOR = 1e-6  # smallest weight the root influence can hold
 _ROOT_JOINT_NEW = "new"
 _ROOT_JOINT_NONE = "none"
 _WEIGHT_INITS = ("noise", "distance")
+_START_FALLOFF_POWER = 2  # exponent of the distance start's falloff
+_SMOOTHING_TARGETS = ("reconstruction", "residual")
+_STILL_STATIC = "static"
 _STATIC_MOTION_FRACTION = (
     1e-3  # a vertex is static below this share of the largest motion
 )
@@ -178,21 +182,28 @@ def candidate_joint_mask(
     return mask
 
 
-def distance_weights(distances: np.ndarray, max_influences: int) -> np.ndarray:
+def distance_weights(
+    distances: np.ndarray,
+    max_influences: int,
+    falloff_power: int = _START_FALLOFF_POWER,
+) -> np.ndarray:
     r"""Builds skinning weights from each vertex's distance to the joints.
 
     Each vertex is weighted to its ``max_influences`` nearest joints with a
     falloff that reaches zero at the next nearest joint:
-    :math:`w_j \propto (1 - d_j / d_{K+1})^2` for the K nearest, zero beyond,
-    normalised to sum to one. The nearest joint always gets the largest
-    weight, so a joint's support is the region around it. These are the
-    starting weights of a solve with joint matrices (see
+    :math:`w_j \propto (1 - d_j / d_{K+1})^n` for the K nearest, zero beyond,
+    normalised to sum to one, with :math:`n` = ``falloff_power``. The nearest
+    joint always gets the largest weight, so a joint's support is the region
+    around it; a higher power concentrates more of the weight on it. These are
+    the starting weights of a solve with joint matrices (see
     :class:`SkinCompressor`), not a finished bind.
 
     Args:
         distances: Joint-to-vertex distances, shape (P, N), for example from
             :func:`geodesic_joint_distances`.
         max_influences: K, the number of joints each vertex starts on.
+        falloff_power: Exponent n of the falloff (default 2; a higher power
+            puts more of the weight on the nearest joint).
 
     Returns:
         Weights of shape (P, N), float64, every column summing to one.
@@ -206,11 +217,40 @@ def distance_weights(distances: np.ndarray, max_influences: int) -> np.ndarray:
     order = np.argsort(distances, axis=0)[: keep + 1]  # (K+1, N), nearest first
     nearest = np.take_along_axis(distances, order, axis=0)
     radius = np.maximum(nearest[-1], 1e-12)
-    falloff = np.clip(1.0 - nearest[:-1] / radius, 0.0, None) ** 2  # (K, N)
+    falloff = np.clip(1.0 - nearest[:-1] / radius, 0.0, None) ** falloff_power  # (K, N)
     falloff[0, falloff.sum(axis=0) <= 0] = 1.0  # all K joints at one distance
     weights = np.zeros_like(distances, dtype=np.float64)
     np.put_along_axis(weights, order[:-1], falloff, axis=0)
     return weights / weights.sum(axis=0)
+
+
+def distance_penalty_weights(
+    distances: np.ndarray, floor: float | None = None
+) -> np.ndarray:
+    r"""How far each joint is from each vertex, relative to the vertex's nearest joint.
+
+    :math:`\rho_{ij} = \max(0,\ d_{ij} / d_i^{(1)} - 1)^2`, with
+    :math:`d_i^{(1)}` the vertex's distance to its nearest joint. It is zero
+    on the nearest joint, grows with relative distance, and does not depend
+    on the scene unit. Weighting a vertex's skin weights by it penalises
+    weight on far joints, which pulls every joint's support toward the joint.
+
+    Args:
+        distances: Joint-to-vertex distances, shape (P, N).
+        floor: Smallest nearest-joint distance used in the ratio, for
+            vertices a joint sits on (distance about zero). None uses a tiny
+            positive value.
+
+    Returns:
+        Penalty weights of shape (P, N), float64, non-negative.
+
+    References:
+        Neumann et al. 2013 (sparse localized deformation components) for
+        distance-shaped sparsity penalties.
+    """
+    nearest = distances.min(axis=0)
+    scale = np.maximum(nearest, floor if floor is not None else 1e-12)
+    return np.clip(distances / scale - 1.0, 0.0, None) ** 2
 
 
 def static_vertex_mask(
@@ -554,6 +594,63 @@ def _resolve_weight_init(requested: str | None, has_joint_matrices: bool) -> str
     return requested
 
 
+def _resolve_distance_penalty(requested: float, has_joint_matrices: bool) -> float:
+    """Validates the distance_penalty argument.
+
+    Raises:
+        ValueError: If it is negative, or positive without joint matrices.
+    """
+    if requested < 0:
+        raise ValueError(f"distance_penalty={requested} must not be negative")
+    if requested > 0 and not has_joint_matrices:
+        raise ValueError(
+            "distance_penalty needs rest_joint_matrices: it is measured from each "
+            "vertex's distance to the joints"
+        )
+    return float(requested)
+
+
+def _resolve_smoothing(requested: str) -> str:
+    """Validates the smoothing argument.
+
+    Raises:
+        ValueError: If it is not "reconstruction" or "residual".
+    """
+    if requested not in _SMOOTHING_TARGETS:
+        raise ValueError(f"smoothing={requested!r} must be one of {_SMOOTHING_TARGETS}")
+    return requested
+
+
+def _resolve_still_vertices(
+    requested: str | float | None, has_root: bool
+) -> str | float | None:
+    """Validates the still_vertices argument.
+
+    Raises:
+        ValueError: If it is not None, "static" or a non-negative distance, or
+            if vertices are to be pinned without a root influence.
+    """
+    if requested is None:
+        return None
+    if isinstance(requested, str):
+        if requested != _STILL_STATIC:
+            raise ValueError(
+                f'still_vertices={requested!r} must be None, "static" or a distance'
+            )
+    elif (
+        isinstance(requested, bool) or not isinstance(requested, Real) or requested < 0
+    ):
+        raise ValueError(
+            f"still_vertices={requested!r} must be a non-negative distance"
+        )
+    if not has_root:
+        raise ValueError(
+            "still_vertices needs a root influence to pin the vertices to; do not "
+            'combine it with root_joint="none"'
+        )
+    return requested if isinstance(requested, str) else float(requested)
+
+
 def _resolve_candidate_joints(
     requested: int | None,
     has_joint_matrices: bool,
@@ -666,6 +763,10 @@ class SkinCompressor:
             filter was turned off. See candidate_joint_mask.
         weight_init: "distance" or "noise", where the weights start; see the
             constructor.
+        distance_penalty: Strength of the far-joint weight penalty, 0 when off.
+        smoothing: "reconstruction" or "residual", what alpha smooths.
+        still_vertices: The still_vertices setting; still_vertex_mask holds
+            the vertices it pinned after run().
         candidate_mask: Boolean (P, N) tensor built by run() from the joint
             positions, or None without a filter.
         total_nnz_B_rt: Total non-zeros in B_rt matrix (default 6000).
@@ -724,6 +825,9 @@ class SkinCompressor:
         joint_parents: Sequence[int] | None = None,
         deltas_about_joints: bool = False,
         weight_init: str | None = None,
+        distance_penalty: float = 0.0,
+        smoothing: str = "reconstruction",
+        still_vertices: str | float | None = None,
     ):
         """Initializes the SkinCompressor.
 
@@ -788,6 +892,24 @@ class SkinCompressor:
                 first steps pick the joints. None (default) means "distance"
                 with rest_joint_matrices and "noise" without. "distance" is
                 not allowed without joint matrices.
+            distance_penalty: Strength of a penalty on weight that sits on a
+                joint farther from the vertex than its nearest joint (see
+                :func:`distance_penalty_weights`), relative to the data's
+                mean squared motion so it does not depend on the scene unit.
+                0 (default) turns it off. Needs joint matrices.
+            smoothing: What the Laplacian smoothness term smooths, weighted by
+                alpha. "reconstruction" (default, the paper's term) smooths
+                the skinned result, which also smooths away fine detail in the
+                target; "residual" smooths the error between the result and
+                the target, which keeps detail the target has.
+            still_vertices: Vertices to pin to the root and leave out of the
+                solve: "static" for vertices no shape moves (under a tenth of
+                a percent of the largest motion), a distance in model units
+                for vertices whose largest motion stays below it, or None
+                (default) to solve every vertex. Pinned vertices still count
+                in the error and keep their place in the mesh for distances
+                and smoothing; fewer vertices to solve makes the run faster.
+                Needs a root influence.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -800,7 +922,9 @@ class SkinCompressor:
                 length, with invalid or cyclic parents, or with a designated
                 root joint that has a parent; if deltas_about_joints is set
                 without joint_parents; if weight_init is unknown or "distance"
-                without joint matrices.
+                without joint matrices; if distance_penalty is negative or set
+                without joint matrices; if smoothing is unknown; if
+                still_vertices is invalid or set without a root.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -886,9 +1010,7 @@ class SkinCompressor:
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
         self.init_weight = init_weight
         self.power = power
-        self.weight_init = _resolve_weight_init(
-            weight_init, has_joint_matrices=self.rest_joint_matrices_3x4 is not None
-        )
+        self._set_fit_options(weight_init, distance_penalty, smoothing, still_vertices)
         self.candidate_joints_per_vertex = _resolve_candidate_joints(
             candidate_joints_per_vertex,
             has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
@@ -1054,6 +1176,11 @@ class SkinCompressor:
             B_rt.data *= self.transform_mask
 
         W = self._initial_weights(N)  # (P', N), one weight per vertex per bone
+        self._prepare_distance_penalty()
+        A_all, rest_all = A, self.rest_pose  # noqa: N806
+        moving = self._prepare_still_vertices(A)
+        if moving is not None:  # solve only the vertices that are not pinned
+            A, W = A[:, moving], W[:, moving]  # noqa: N806
         W.requires_grad_()
 
         for index, phase in enumerate(self.schedule, start=1):
@@ -1065,6 +1192,9 @@ class SkinCompressor:
             self.train(B_rt=B_rt, TR=TR, A=A, W=W, phase=phase)
 
         Wn = self._final_weights(W)
+        if moving is not None:
+            Wn = self._with_pinned_vertices(Wn, moving, N)  # noqa: N806
+            A, self.rest_pose = A_all, rest_all  # noqa: N806
         self._validate_weights(Wn)
         print(Wn.min().item(), Wn.max().item())
         BX, B, _ = self.compBX(
@@ -1198,6 +1328,42 @@ class SkinCompressor:
             "jointParents": self.joint_parents.copy(),
             "localShapeXform": local_matrix.detach().cpu().numpy(),
         }
+
+    def _set_fit_options(
+        self,
+        weight_init: str | None,
+        distance_penalty: float,
+        smoothing: str,
+        still_vertices: str | float | None,
+    ) -> None:
+        """Validates and stores the start, penalty, smoothing and pinning options.
+
+        Args:
+            weight_init: See the constructor.
+            distance_penalty: See the constructor.
+            smoothing: See the constructor.
+            still_vertices: See the constructor.
+
+        Raises:
+            ValueError: See the constructor.
+        """
+        has_joints = self.rest_joint_matrices_3x4 is not None
+        self.weight_init = _resolve_weight_init(
+            weight_init, has_joint_matrices=has_joints
+        )
+        self.distance_penalty = _resolve_distance_penalty(
+            distance_penalty, has_joint_matrices=has_joints
+        )
+        self.smoothing = _resolve_smoothing(smoothing)
+        self.still_vertices = _resolve_still_vertices(
+            still_vertices, has_root=self.root_joint is not None
+        )
+        # Filled by run():
+        self.still_vertex_mask: np.ndarray | None = None
+        self._penalty_weights: torch.Tensor | None = None
+        self._motion_energy = 0.0
+        self._fixed_error: tuple[torch.Tensor, int] | None = None
+        self._smoothing_offset: torch.Tensor | None = None
 
     def _check_schedule_fits_model(self) -> None:
         """Rejects a schedule the projections cannot apply to this model.
@@ -1340,6 +1506,140 @@ class SkinCompressor:
         if self.root_joint is not None:
             W[self.root_joint].clamp_(min=_ROOT_WEIGHT_FLOOR)
         return W
+
+    def _prepare_distance_penalty(self) -> None:
+        """Builds the far-joint penalty weights on the device, if the penalty is on.
+
+        The rows of the root are zero, so weight on the root is never
+        penalised. The scale is the data's mean squared motion, so the
+        strength does not depend on the scene unit.
+        """
+        if self.distance_penalty == 0:
+            return
+        graph = _edge_length_graph(
+            self.model_data.rest_verts, self.model_data.rest_faces
+        )
+        rho = distance_penalty_weights(
+            self._joint_distances(), floor=float(graph.data.mean())
+        )
+        if rho.shape[0] < self.number_of_bones:  # synthetic root row
+            rho = np.vstack([rho, np.zeros((1, rho.shape[1]))])
+        if self.root_joint is not None:
+            rho[self.root_joint] = 0.0
+        self._penalty_weights = torch.from_numpy(rho).float().to(self.device)
+        self._motion_energy = float(
+            np.mean(np.square(self.model_data.deltas, dtype=np.float64))
+        )
+
+    def _penalty_term(self, W_n: torch.Tensor) -> torch.Tensor:  # noqa: N803
+        """distance_penalty times the mean, over all vertices, of sum_j w_ij rho_ij."""
+        if self._penalty_weights is None:
+            raise RuntimeError("the distance penalty is prepared by run()")
+        n_verts = self.model_data.rest_verts.shape[0]
+        weighted = (W_n * self._penalty_weights).sum() / n_verts
+        return self.distance_penalty * self._motion_energy * weighted
+
+    def _data_term(self, error: torch.Tensor) -> torch.Tensor:
+        """The fitting error term, averaged over every vertex including pinned ones."""
+        if self._fixed_error is None:
+            return error.pow(self.power).mean().pow(2 / self.power)
+        pinned_total, count = self._fixed_error
+        return ((error.pow(self.power).sum() + pinned_total) / count).pow(
+            2 / self.power
+        )
+
+    def _smoothness_term(self, B_X: torch.Tensor, A: torch.Tensor) -> torch.Tensor:  # noqa: N803
+        """The Laplacian term on the reconstruction or on the residual."""
+        if self.L is None:
+            raise RuntimeError(
+                "Laplacian is not initialized; train must be called via run()."
+            )
+        target = B_X - A if self.smoothing == "residual" else B_X
+        smoothed = self.L @ target.transpose(0, 1)
+        if self._smoothing_offset is not None:
+            smoothed = smoothed + self._smoothing_offset
+        return smoothed.pow(2).mean()
+
+    def _still_vertices_to_pin(self) -> np.ndarray | None:
+        """The vertices still_vertices selects, shape (N,), or None when off."""
+        if self.still_vertices is None:
+            return None
+        if self.still_vertices == _STILL_STATIC:
+            return static_vertex_mask(self.model_data.deltas)
+        motion = np.linalg.norm(
+            np.asarray(self.model_data.deltas, dtype=np.float64), axis=2
+        ).max(axis=0)
+        return motion < self.still_vertices
+
+    def _prepare_still_vertices(self, A: torch.Tensor) -> torch.Tensor | None:  # noqa: N803
+        """Restricts the solve to the vertices that are not pinned to the root.
+
+        Keeps the objective identical to solving every vertex with the pinned
+        ones fixed on the root: the error is still averaged over all
+        vertices, and the smoothness term keeps every row of the Laplacian,
+        the pinned vertices contributing their fixed (zero) motion.
+
+        Args:
+            A: Target matrix for every vertex, shape (3S, N).
+
+        Returns:
+            Indices of the vertices to solve, or None when nothing is pinned.
+
+        Raises:
+            ValueError: If every vertex would be pinned.
+        """
+        still = self._still_vertices_to_pin()
+        if still is None or not still.any():
+            return None
+        if still.all():
+            raise ValueError(
+                "still_vertices pins every vertex: nothing would be solved"
+            )
+        self.still_vertex_mask = still
+        if self.L is None or self.rest_pose is None:
+            raise RuntimeError("still vertices are prepared by run()")
+        moving = torch.from_numpy(np.flatnonzero(~still)).to(self.device)
+        pinned = torch.from_numpy(np.flatnonzero(still)).to(self.device)
+        pinned_target = A[:, pinned]  # (3S, n_pinned), reconstructed as zero
+        self._fixed_error = (pinned_target.pow(self.power).sum(), A.numel())
+        if self.smoothing == "residual":
+            self._smoothing_offset = -torch.sparse.mm(
+                self.L.index_select(1, pinned),
+                pinned_target.transpose(0, 1).contiguous(),
+            )
+        self.L = self.L.index_select(1, moving).coalesce()
+        self.rest_pose = self.rest_pose[moving]
+        if self.candidate_mask is not None:
+            self.candidate_mask = self.candidate_mask[:, moving]
+        if self._penalty_weights is not None:
+            self._penalty_weights = self._penalty_weights[:, moving]
+        print(
+            f"still vertices: {int(still.sum())} pinned to the root and left out of the solve"
+        )
+        return moving
+
+    def _with_pinned_vertices(
+        self,
+        Wn: torch.Tensor,
+        moving: torch.Tensor,
+        n_verts: int,  # noqa: N803
+    ) -> torch.Tensor:
+        """Expands solved weights to every vertex, pinned ones fully on the root.
+
+        Args:
+            Wn: Normalised weights of the solved vertices, shape (P', n_moving).
+            moving: Indices of the solved vertices.
+            n_verts: Number of vertices N.
+
+        Returns:
+            Weights of shape (P', N).
+        """
+        full = torch.zeros(
+            self.number_of_bones, n_verts, device=Wn.device, dtype=Wn.dtype
+        )
+        full[self.root_joint] = 1.0
+        full[:, moving] = Wn
+        return full
 
     def _report_joint_coverage(self, Wn: torch.Tensor) -> None:  # noqa: N803
         """Prints how many vertices each joint drives and lists idle joints.
@@ -1603,14 +1903,16 @@ class SkinCompressor:
             )
             weighed_error = B_X - A
 
-            loss = weighed_error.pow(self.power).mean().pow(2 / self.power)
+            loss = self._data_term(weighed_error)
             if self.alpha is not None:
                 if self.L is None:
                     raise RuntimeError(
                         "Laplacian is not initialized; train must be called via run()."
                     )
                 # add Laplacian regularization term
-                loss += self.alpha * (self.L @ (B_X).transpose(0, 1)).pow(2).mean()
+                loss += self.alpha * self._smoothness_term(B_X, A)
+            if self._penalty_weights is not None:
+                loss += self._penalty_term(W_n)
 
             self.optimizer.zero_grad()
             loss.backward()

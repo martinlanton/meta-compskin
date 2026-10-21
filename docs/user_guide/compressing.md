@@ -48,6 +48,9 @@ Constructor arguments:
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
 | `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
 | `weight_init` | `"distance"` with joint matrices, `"noise"` without | Where the skin weights start. `"distance"` weights each vertex to its $K$ nearest joints by distance and puts vertices no shape moves on the root; `"noise"` starts from tiny random values. See [Starting weights](#starting-weights). |
+| `distance_penalty` | 0 (off) | With joint matrices, pulls each joint's skin toward the joint by penalising weight on joints farther than a vertex's nearest one. Scale-free. See [Keeping joints local](#keeping-joints-local). |
+| `smoothing` | `"reconstruction"` | What `alpha` smooths: the skinned result (the paper's term) or, with `"residual"`, the error, which keeps fine detail the target has. See [Smoothing the error instead of the result](#smoothing-the-error-instead-of-the-result). |
+| `still_vertices` | `None` | `"static"` or a distance in model units: skin that does not move (or moves less than that) is pinned to the root and left out of the solve, which makes the run faster. Needs the root influence. See [Skin that does not move](#skin-that-does-not-move). |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
@@ -99,8 +102,9 @@ climbs steeply.
 the solver more capacity (more joints, larger $L$, more iterations). Expect
 less smooth weights and a much longer solve.
 
-**Result looks blurred or loses wrinkles.** Lower `alpha`. If it looks noisy
-or the weight map is speckled, raise it.
+**Result looks blurred or loses wrinkles.** Lower `alpha`, or try
+`smoothing="residual"`, which smooths the error instead of the result. If it
+looks noisy or the weight map is speckled, raise `alpha`.
 
 **Results vary a lot between seeds, or worst-case error is worse than
 expected at your $K$.** Try annealing the influence budget — see
@@ -229,7 +233,8 @@ steps (see [How the solver works](../concepts/how_the_solver_works.md)), so
 where the weights start matters. With joint matrices, `weight_init="distance"`
 (the default) starts every vertex on its $K$ nearest joints along the surface,
 the nearest with the largest weight and the weight falling to zero at the
-next joint out, and starts vertices that no shape moves fully on the root. The
+next joint out as $(1 - d/d_{K+1})^2$, and starts vertices that no shape moves
+fully on the root. The
 solver is then free to change all of it: static skin stays on the root except
 along its border with moving skin, where the smoothness term blends the two.
 On real rigs this start gave both more local joints and a slightly lower
@@ -281,6 +286,55 @@ The file additionally stores the hierarchy and each joint's own deltas; see
 [Data formats](../concepts/data_formats.md).
 
 Example script: `examples/example_custom_joints.py`.
+
+### Keeping joints local
+
+The candidate mask and the starting weights decide which joints a vertex can
+use and where it starts. `distance_penalty` adds a preference inside that
+choice: weight on a joint farther from the vertex than its nearest joint
+costs, in proportion to how much farther (zero on the nearest joint and on the
+root, growing with the square of the extra relative distance). Each joint's
+skin is pulled toward the joint for the whole solve.
+
+```python
+compressor = SkinCompressor(
+    model_data=model_data,
+    rest_joint_matrices=joint_matrices,
+    distance_penalty=0.1,
+)
+```
+
+The strength is relative to the data's motion, so the same value means the
+same trade on any scene unit, but not on any rig: it trades accuracy for
+locality, and how much of each depends on the joint layout. Raise it until the
+error starts to climb. Off by default.
+
+### Smoothing the error instead of the result
+
+The smoothness term, weighted by `alpha`, penalises a reconstruction whose
+motion varies sharply between neighbouring vertices. Real shapes have such
+detail (wrinkles, creases), so the term also pulls the fit away from it.
+`smoothing="residual"` (`--smoothing residual`) applies the same term to the
+error between the result and the target instead: it still discourages jagged
+weight maps, which produce a jagged error, but no longer penalises detail the
+target has. A higher `alpha` is then usually affordable. The default stays the
+paper's term.
+
+### Skin that does not move
+
+On many heads part of the skin never moves: the skull, the back of the neck.
+With `still_vertices="static"` (`--still-vertices static`) the vertices no
+shape moves (under a tenth of a percent of the largest motion) are pinned to
+the root and left out of the solve. A distance instead of `"static"` pins
+every vertex whose largest motion stays below it, in model units (`0.05` for
+half a millimetre in a centimetre scene); that motion is then lost, so keep it
+small.
+
+Pinned vertices still count: the reported error covers every vertex, and they
+keep their place in the mesh for the joint distances and the smoothness term,
+so nothing changes for their moving neighbours. The run gets faster roughly in
+proportion to the share of vertices pinned. It needs the root influence, the
+default with joint matrices.
 
 ## GPU and timing
 

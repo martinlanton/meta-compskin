@@ -22,8 +22,11 @@ the filter off). With joints the weights start from each vertex's distance to
 them (``--weight-init noise`` starts from random values instead). If the file
 also carries ``joint_parents`` (the exporter writes them with the joints),
 ``--joint-hierarchy`` solves the deltas through that hierarchy, so a child joint
-follows its parent; by default every joint is solved on its own. Pass
-``--warm-up false`` to disable the unnormalised warm-up
+follows its parent; by default every joint is solved on its own.
+``--distance-penalty`` pulls each joint's skin toward the joint,
+``--smoothing residual`` smooths the error instead of the result, and
+``--still-vertices static`` (or a distance) pins skin that does not move to
+the root and leaves it out of the solve. Pass ``--warm-up false`` to disable the unnormalised warm-up
 phase and run only normalised training (useful for research). CUDA is used
 automatically when this interpreter's torch sees a GPU.
 """
@@ -59,6 +62,28 @@ def _int_list(text: str) -> tuple[int, ...]:
     except ValueError as e:
         raise argparse.ArgumentTypeError(
             f"expected comma-separated integers, got {text!r}"
+        ) from e
+
+
+def _still_vertices_arg(text: str) -> str | float:
+    """Converts a --still-vertices argument: "static" or a distance.
+
+    Args:
+        text: The raw --still-vertices value.
+
+    Returns:
+        "static", or the distance in model units as a float.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is neither.
+    """
+    if text == "static":
+        return text
+    try:
+        return float(text)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"--still-vertices must be 'static' or a distance, got {text!r}"
         ) from e
 
 
@@ -135,6 +160,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Where the weights start: 'distance' (from each vertex's distance to the "
         "joints; the default with joints) or 'noise' (random; the default without).",
+    )
+    parser.add_argument(
+        "--distance-penalty",
+        type=float,
+        default=None,
+        help="Strength of the penalty on weight far from each vertex's nearest joint "
+        "(needs joints; default 0, off).",
+    )
+    parser.add_argument(
+        "--smoothing",
+        choices=["reconstruction", "residual"],
+        default=None,
+        help="What alpha smooths: the skinned result (default) or the error.",
+    )
+    parser.add_argument(
+        "--still-vertices",
+        type=_still_vertices_arg,
+        default=None,
+        help="Pin to the root and leave out of the solve: 'static' (no motion) or a "
+        "distance in model units (largest motion below it).",
     )
     parser.add_argument(
         "--deltas-about-joints",
@@ -220,6 +265,9 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "candidate_joints_per_vertex",
         "root_joint",
         "weight_init",
+        "distance_penalty",
+        "smoothing",
+        "still_vertices",
     ):
         value = getattr(args, option, None)
         if value is not None:

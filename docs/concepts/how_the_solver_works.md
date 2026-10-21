@@ -40,6 +40,24 @@ loss += alpha * (L @ B_X.T).pow(2).mean()  # Laplacian term
 where `B_X` is the current reconstruction $\mathbf{B}\mathbf{C}$, `A` the
 target deltas, and `L` the mesh Laplacian built from `rest_faces`.
 
+Two optional terms change this, both off by default:
+
+- `smoothing="residual"` replaces `B_X` by `B_X - A` in the Laplacian term,
+  so the smoothing acts on the error instead of the result and stops
+  penalising detail that is in the target.
+- `distance_penalty` $\lambda$ (with joint matrices) adds
+  $\lambda\,\overline{\lVert A\rVert^2}\,\frac{1}{N}\sum_i\sum_j w_{ij}\rho_{ij}$,
+  with $\rho_{ij} = \max(0,\ d_{ij}/d_i^{(1)} - 1)^2$ from the surface
+  distance $d_{ij}$ between vertex $i$ and joint $j$ and the vertex's
+  distance $d_i^{(1)}$ to its nearest joint. It is zero on the nearest joint
+  and on the root, and scaled by the data's mean squared motion so
+  $\lambda$ does not depend on the scene unit.
+
+With `still_vertices`, the vertices it selects are fixed on the root and left
+out of `B_X`; their (constant) error is still part of the data term's average
+and their zero motion still enters the Laplacian term, so the objective is
+the same as solving every vertex with those weights held fixed.
+
 ## Unconstrained optimiser plus projections
 
 The parameters are the six coefficients per (shape, joint) in `B_rt` and the
@@ -186,7 +204,8 @@ tables are in millimetres). How to interpret them is in
 | `candidate_joints_per_vertex` ($M$, custom joints only) | $\min(K+2, P-1)$ | more freedom for the solver, joints reach further from their position; on real rigs $2K$ halved the locality for no accuracy gain | tighter locality per joint; $M = K$ leaves the solver nothing to choose |
 | `weight_init` (custom joints only) | `"distance"` | | `"noise"` returns to the random start: less local joints, slightly higher error on real rigs |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
-| `alpha` | per model, 10 or 50 | smoother, blurrier result | sharper, risk of noisy weights; lower for dense meshes |
+| `alpha` | per model, 10 or 50 | smoother, blurrier result (with `smoothing="residual"`, smoother weights without blurring detail) | sharper, risk of noisy weights; lower for dense meshes |
+| `distance_penalty` (custom joints only) | 0 | each joint's skin closer to the joint, higher error | |
 | `power` ($p$) | 2 | high values (12) minimise the *worst* error at the cost of smoothness; needs more capacity and many more iterations | |
 | `warm_up_enabled` | `True` | (not adjustable: boolean) | disables the unnormalised warm-up and runs only normalised phases; faster solve with slightly worse error; used in research to measure the impact of the warm-up separately from other solver components |
 
