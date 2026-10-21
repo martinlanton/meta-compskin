@@ -101,6 +101,12 @@ class CompressionSettings:
             parent. Off by default; only applies with joint matrices.
         weight_init: Where the weights start, ``"distance"`` or ``"noise"``;
             None leaves the choice to the compressor (distance with joints).
+        distance_penalty: Strength of the penalty on weight far from each
+            vertex's nearest joint; None leaves it off.
+        smoothing: ``"reconstruction"`` or ``"residual"``; None keeps the
+            compressor's default (reconstruction).
+        still_vertices: ``"static"`` or a distance in scene units: skin to
+            pin to the root and leave out of the solve; None solves all.
     """
 
     iterations: int | tuple[int, ...] = 10000
@@ -117,6 +123,9 @@ class CompressionSettings:
     use_joint_matrices: bool = True
     use_joint_hierarchy: bool = False
     weight_init: str | None = None
+    distance_penalty: float | None = None
+    smoothing: str | None = None
+    still_vertices: str | float | None = None
 
 
 @dataclass(frozen=True)
@@ -466,6 +475,9 @@ def compression_command(
         "--candidate-joints-per-vertex": settings.candidate_joints_per_vertex,
         "--root-joint": settings.root_joint,
         "--weight-init": settings.weight_init,
+        "--distance-penalty": settings.distance_penalty,
+        "--smoothing": settings.smoothing,
+        "--still-vertices": settings.still_vertices,
     }
     for flag, value in options.items():
         if value is not None:
