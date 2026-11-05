@@ -47,6 +47,7 @@ _WEIGHT_INITS = ("noise", "distance")
 _START_FALLOFF_POWER = 2  # exponent of the distance start's falloff
 _SMOOTHING_TARGETS = ("reconstruction", "residual")
 _STILL_STATIC = "static"
+_STILL_OFF = "none"
 _STATIC_MOTION_FRACTION = (
     1e-3  # a vertex is static below this share of the largest motion
 )
@@ -610,32 +611,54 @@ def _resolve_distance_penalty(requested: float, has_joint_matrices: bool) -> flo
     return float(requested)
 
 
-def _resolve_smoothing(requested: str) -> str:
-    """Validates the smoothing argument.
+def _resolve_smoothing(requested: str | None, has_joint_matrices: bool) -> str:
+    """Turns the smoothing argument into "reconstruction" or "residual".
+
+    Args:
+        requested: The constructor argument, or None for the default.
+        has_joint_matrices: Whether joint positions are available.
+
+    Returns:
+        "residual" with joint matrices, "reconstruction" without, unless
+        requested.
 
     Raises:
-        ValueError: If it is not "reconstruction" or "residual".
+        ValueError: If it is not None, "reconstruction" or "residual".
     """
+    if requested is None:
+        return "residual" if has_joint_matrices else "reconstruction"
     if requested not in _SMOOTHING_TARGETS:
         raise ValueError(f"smoothing={requested!r} must be one of {_SMOOTHING_TARGETS}")
     return requested
 
 
 def _resolve_still_vertices(
-    requested: str | float | None, has_root: bool
+    requested: str | float | None, has_root: bool, has_joint_matrices: bool
 ) -> str | float | None:
-    """Validates the still_vertices argument.
+    """Turns the still_vertices argument into "static", a distance or None (off).
+
+    Args:
+        requested: The constructor argument, or None for the default.
+        has_root: Whether there is a root influence to pin vertices to.
+        has_joint_matrices: Whether joint positions are available.
+
+    Returns:
+        "static" with joint matrices and a root, None (nothing pinned)
+        otherwise, unless requested; "none" also means nothing pinned.
 
     Raises:
-        ValueError: If it is not None, "static" or a non-negative distance, or
-            if vertices are to be pinned without a root influence.
+        ValueError: If it is not None, "none", "static" or a non-negative
+            distance, or if vertices are to be pinned without a root influence.
     """
     if requested is None:
-        return None
+        return _STILL_STATIC if has_joint_matrices and has_root else None
     if isinstance(requested, str):
+        if requested == _STILL_OFF:
+            return None
         if requested != _STILL_STATIC:
             raise ValueError(
-                f'still_vertices={requested!r} must be None, "static" or a distance'
+                f'still_vertices={requested!r} must be None, "none", "static" or a '
+                "distance"
             )
     elif (
         isinstance(requested, bool) or not isinstance(requested, Real) or requested < 0
@@ -764,9 +787,11 @@ class SkinCompressor:
         weight_init: "distance" or "noise", where the weights start; see the
             constructor.
         distance_penalty: Strength of the far-joint weight penalty, 0 when off.
-        smoothing: "reconstruction" or "residual", what alpha smooths.
-        still_vertices: The still_vertices setting; still_vertex_mask holds
-            the vertices it pinned after run().
+        smoothing: "reconstruction" or "residual", what alpha smooths, after
+            the default is resolved.
+        still_vertices: "static", a distance, or None when nothing is pinned,
+            after the default is resolved; still_vertex_mask holds the
+            vertices it pinned after run().
         candidate_mask: Boolean (P, N) tensor built by run() from the joint
             positions, or None without a filter.
         total_nnz_B_rt: Total non-zeros in B_rt matrix (default 6000).
@@ -826,7 +851,7 @@ class SkinCompressor:
         deltas_about_joints: bool = False,
         weight_init: str | None = None,
         distance_penalty: float = 0.0,
-        smoothing: str = "reconstruction",
+        smoothing: str | None = None,
         still_vertices: str | float | None = None,
     ):
         """Initializes the SkinCompressor.
@@ -898,18 +923,22 @@ class SkinCompressor:
                 mean squared motion so it does not depend on the scene unit.
                 0 (default) turns it off. Needs joint matrices.
             smoothing: What the Laplacian smoothness term smooths, weighted by
-                alpha. "reconstruction" (default, the paper's term) smooths
-                the skinned result, which also smooths away fine detail in the
-                target; "residual" smooths the error between the result and
-                the target, which keeps detail the target has.
+                alpha. "reconstruction" (the paper's term) smooths the skinned
+                result, which also smooths away fine detail in the target such
+                as creases and lip edges; "residual" smooths the error between
+                the result and the target, which keeps detail the target has.
+                None (default) means "residual" with rest_joint_matrices and
+                "reconstruction" without.
             still_vertices: Vertices to pin to the root and leave out of the
                 solve: "static" for vertices no shape moves (under a tenth of
                 a percent of the largest motion), a distance in model units
-                for vertices whose largest motion stays below it, or None
-                (default) to solve every vertex. Pinned vertices still count
-                in the error and keep their place in the mesh for distances
-                and smoothing; fewer vertices to solve makes the run faster.
-                Needs a root influence.
+                for vertices whose largest motion stays below it, or "none"
+                to solve every vertex. None (default) means "static" with
+                rest_joint_matrices and a root influence, and "none"
+                otherwise. Pinned vertices still count in the error and keep
+                their place in the mesh for distances and smoothing; fewer
+                vertices to solve makes the run faster. Pinning needs a root
+                influence.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -1333,7 +1362,7 @@ class SkinCompressor:
         self,
         weight_init: str | None,
         distance_penalty: float,
-        smoothing: str,
+        smoothing: str | None,
         still_vertices: str | float | None,
     ) -> None:
         """Validates and stores the start, penalty, smoothing and pinning options.
@@ -1354,9 +1383,11 @@ class SkinCompressor:
         self.distance_penalty = _resolve_distance_penalty(
             distance_penalty, has_joint_matrices=has_joints
         )
-        self.smoothing = _resolve_smoothing(smoothing)
+        self.smoothing = _resolve_smoothing(smoothing, has_joint_matrices=has_joints)
         self.still_vertices = _resolve_still_vertices(
-            still_vertices, has_root=self.root_joint is not None
+            still_vertices,
+            has_root=self.root_joint is not None,
+            has_joint_matrices=has_joints,
         )
         # Filled by run():
         self.still_vertex_mask: np.ndarray | None = None
@@ -1564,7 +1595,7 @@ class SkinCompressor:
         """The vertices still_vertices selects, shape (N,), or None when off."""
         if self.still_vertices is None:
             return None
-        if self.still_vertices == _STILL_STATIC:
+        if isinstance(self.still_vertices, str):  # "static", the only string kept
             return static_vertex_mask(self.model_data.deltas)
         motion = np.linalg.norm(
             np.asarray(self.model_data.deltas, dtype=np.float64), axis=2

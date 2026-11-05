@@ -108,9 +108,12 @@ class CompressionSettings:
         distance_penalty: Strength of the penalty on weight far from each
             vertex's nearest joint; None leaves it off.
         smoothing: ``"reconstruction"`` or ``"residual"``; None keeps the
-            compressor's default (reconstruction).
-        still_vertices: ``"static"`` or a distance in scene units: skin to
-            pin to the root and leave out of the solve; None solves all.
+            compressor's default (residual with joints, reconstruction
+            without).
+        still_vertices: ``"static"``, a distance in scene units, or
+            ``"none"``: skin to pin to the root and leave out of the solve;
+            None keeps the compressor's default (static with joints, nothing
+            without).
     """
 
     iterations: int | tuple[int, ...] = 10000

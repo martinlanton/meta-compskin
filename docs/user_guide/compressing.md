@@ -49,8 +49,8 @@ Constructor arguments:
 | `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
 | `weight_init` | `"distance"` with joint matrices, `"noise"` without | Where the skin weights start. `"distance"` weights each vertex to its $K$ nearest joints by distance and puts vertices no shape moves on the root; `"noise"` starts from tiny random values. See [Starting weights](#starting-weights). |
 | `distance_penalty` | 0 (off) | With joint matrices, pulls each joint's skin toward the joint by penalising weight on joints farther than a vertex's nearest one. Scale-free. See [Keeping joints local](#keeping-joints-local). |
-| `smoothing` | `"reconstruction"` | What `alpha` smooths: the skinned result (the paper's term) or, with `"residual"`, the error, which keeps fine detail the target has. See [Smoothing the error instead of the result](#smoothing-the-error-instead-of-the-result). |
-| `still_vertices` | `None` | `"static"` or a distance in model units: skin that does not move (or moves less than that) is pinned to the root and left out of the solve, which makes the run faster. Needs the root influence. See [Skin that does not move](#skin-that-does-not-move). |
+| `smoothing` | `"residual"` with joint matrices, `"reconstruction"` without | What `alpha` smooths: the error between the result and the target (`"residual"`), which keeps fine detail the target has, or the skinned result itself (`"reconstruction"`, the paper's term). See [Smoothing the error instead of the result](#smoothing-the-error-instead-of-the-result). |
+| `still_vertices` | `"static"` with joint matrices and a root, `"none"` otherwise | Skin to pin to the root and leave out of the solve, which makes the run faster: `"static"` for skin no shape moves, a distance in model units for skin moving less than that, or `"none"` to solve every vertex. Pinning needs the root influence. See [Skin that does not move](#skin-that-does-not-move). |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
@@ -102,9 +102,10 @@ climbs steeply.
 the solver more capacity (more joints, larger $L$, more iterations). Expect
 less smooth weights and a much longer solve.
 
-**Result looks blurred or loses wrinkles.** Lower `alpha`, or try
-`smoothing="residual"`, which smooths the error instead of the result. If it
-looks noisy or the weight map is speckled, raise `alpha`.
+**Result looks blurred or loses wrinkles.** Without joint matrices, try
+`smoothing="residual"`, which smooths the error instead of the result (the
+default with joints), or lower `alpha`. If it looks noisy or the weight map is
+speckled, raise `alpha`.
 
 **Results vary a lot between seeds, or worst-case error is worse than
 expected at your $K$.** Try annealing the influence budget — see
@@ -313,19 +314,29 @@ error starts to climb. Off by default.
 
 The smoothness term, weighted by `alpha`, penalises a reconstruction whose
 motion varies sharply between neighbouring vertices. Real shapes have such
-detail (wrinkles, creases), so the term also pulls the fit away from it.
+detail (wrinkles, creases, lip and eyelid edges), so the term also pulls the
+fit away from it, and the worst errors gather exactly there.
 `smoothing="residual"` (`--smoothing residual`) applies the same term to the
 error between the result and the target instead: it still discourages jagged
 weight maps, which produce a jagged error, but no longer penalises detail the
-target has. A higher `alpha` is then usually affordable. The default stays the
-paper's term.
+target has. The worst-case error drops sharply, mostly on the sharpest parts
+of the face, and the average error does not get worse. A higher `alpha` is
+then usually affordable.
+
+It is the default when joint matrices are given. Without them the default
+stays the paper's term, so results on that path do not change; pass
+`smoothing="reconstruction"` (`--smoothing reconstruction`) to use the
+paper's term with joints too.
 
 ### Skin that does not move
 
 On many heads part of the skin never moves: the skull, the back of the neck.
 With `still_vertices="static"` (`--still-vertices static`) the vertices no
 shape moves (under a tenth of a percent of the largest motion) are pinned to
-the root and left out of the solve. A distance instead of `"static"` pins
+the root and left out of the solve. This is the default when joint matrices
+are given and there is a root influence; `still_vertices="none"`
+(`--still-vertices none`) solves every vertex, as the path without joints
+does. A distance instead of `"static"` pins
 every vertex whose largest motion stays below it, in model units (`0.05` for
 half a millimetre in a centimetre scene); that motion is then lost, so keep it
 small.
