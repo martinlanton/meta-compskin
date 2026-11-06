@@ -40,20 +40,22 @@ loss += alpha * (L @ B_X.T).pow(2).mean()  # Laplacian term
 where `B_X` is the current reconstruction $\mathbf{B}\mathbf{C}$, `A` the
 target deltas, and `L` the mesh Laplacian built from `rest_faces`.
 
-Two optional terms change this, both off by default:
+Two terms change this:
 
-- `smoothing="residual"` replaces `B_X` by `B_X - A` in the Laplacian term,
-  so the smoothing acts on the error instead of the result and stops
-  penalising detail that is in the target.
+- `smoothing="residual"`, the default with joint matrices, replaces `B_X` by
+  `B_X - A` in the Laplacian term, so the smoothing acts on the error instead
+  of the result and stops penalising detail that is in the target. Without
+  joint matrices the default is the paper's term above.
 - `distance_penalty` $\lambda$ (with joint matrices) adds
   $\lambda\,\overline{\lVert A\rVert^2}\,\frac{1}{N}\sum_i\sum_j w_{ij}\rho_{ij}$,
   with $\rho_{ij} = \max(0,\ d_{ij}/d_i^{(1)} - 1)^2$ from the surface
   distance $d_{ij}$ between vertex $i$ and joint $j$ and the vertex's
   distance $d_i^{(1)}$ to its nearest joint. It is zero on the nearest joint
   and on the root, and scaled by the data's mean squared motion so
-  $\lambda$ does not depend on the scene unit.
+  $\lambda$ does not depend on the scene unit. Off by default.
 
-With `still_vertices`, the vertices it selects are fixed on the root and left
+With `still_vertices` (`"static"` by default with joint matrices and a root),
+the vertices it selects are fixed on the root and left
 out of `B_X`; their (constant) error is still part of the data term's average
 and their zero motion still enters the Laplacian term, so the objective is
 the same as solving every vertex with those weights held fixed.

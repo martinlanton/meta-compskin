@@ -152,9 +152,22 @@ class TestSmoothing:
         with pytest.raises(ValueError, match="smoothing"):
             SkinCompressor(model_data=grid_model_data, smoothing="weights")
 
-    def test_reconstruction_is_the_default(self, tmp_path):
+    def test_residual_is_the_default_with_joint_matrices(self, tmp_path):
         np.testing.assert_array_equal(
-            _run(tmp_path, "explicit", smoothing="reconstruction"),
+            _run(tmp_path, "explicit", smoothing="residual"),
+            _run(tmp_path, "default"),
+        )
+
+    def test_reconstruction_is_the_default_without_joint_matrices(
+        self, grid_model_data
+    ):
+        compressor = SkinCompressor(model_data=grid_model_data, number_of_bones=10)
+
+        assert compressor.smoothing == "reconstruction"
+
+    def test_reconstruction_can_still_be_chosen_with_joint_matrices(self, tmp_path):
+        assert not np.array_equal(
+            _run(tmp_path, "reconstruction", smoothing="reconstruction"),
             _run(tmp_path, "default"),
         )
 
@@ -261,8 +274,40 @@ class TestStillVertices:
 
     def test_pinning_nothing_changes_nothing(self, tmp_path):
         np.testing.assert_array_equal(
-            _run(tmp_path, "none_pinned", still_vertices=0.0), _run(tmp_path, "default")
+            _run(tmp_path, "none_pinned", still_vertices=0.0),
+            _run(tmp_path, "off", still_vertices="none"),
         )
+
+    def test_static_vertices_are_pinned_by_default_with_joint_matrices(self, tmp_path):
+        model = _with_still_region(make_grid_model())
+
+        np.testing.assert_array_equal(
+            _run(tmp_path, "default", model),
+            _run(tmp_path, "static", model, still_vertices="static"),
+        )
+
+    def test_none_turns_pinning_off(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_grid_joints(),
+            still_vertices="none",
+        )
+
+        assert compressor.still_vertices is None
+
+    def test_nothing_is_pinned_by_default_without_joint_matrices(self, grid_model_data):
+        compressor = SkinCompressor(model_data=grid_model_data, number_of_bones=10)
+
+        assert compressor.still_vertices is None
+
+    def test_nothing_is_pinned_by_default_without_a_root(self, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_grid_joints(),
+            root_joint="none",
+        )
+
+        assert compressor.still_vertices is None
 
 
 class TestCommandLine:
@@ -315,6 +360,26 @@ class TestCommandLine:
         )
 
         np.testing.assert_array_equal(np.load(output)["weights"][20:, -1], 1.0)
+
+    def test_still_vertices_none_turns_pinning_off(self, tmp_path):
+        output = tmp_path / "out.npz"
+
+        main(
+            [
+                str(self._model(tmp_path)),
+                str(output),
+                "--iterations",
+                "200",
+                "--total-nnz-b-rt",
+                "60",
+                "--max-influences",
+                "2",
+                "--still-vertices",
+                "none",
+            ]
+        )
+
+        assert output.exists()
 
     def test_unknown_smoothing_is_rejected(self, tmp_path):
         with pytest.raises(SystemExit):

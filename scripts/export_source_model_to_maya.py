@@ -31,6 +31,8 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
+_POINT_SIZE = 3  # x, y, z
+
 DEFAULT_MODELS = ("aura", "bowen", "jupiter", "proteus")
 
 # Sub-meshes beyond the head, as (npz key prefix, node suffix).
@@ -50,12 +52,13 @@ def init_maya() -> tuple[Any, Any]:
         SystemExit: If Maya's Python modules are unavailable, which means the
             script is running under a standard interpreter instead of mayapy.
     """
+    # Maya's modules exist only under mayapy, so they are imported here, not at the top.
     try:
-        import maya.standalone
+        import maya.standalone  # noqa: PLC0415
 
         maya.standalone.initialize(name="python")
-        from maya import cmds
-        import maya.api.OpenMaya as om
+        import maya.api.OpenMaya as om  # noqa: PLC0415, N813 (Maya's own alias)
+        from maya import cmds  # noqa: PLC0415
     except ImportError as exc:  # pragma: no cover - requires mayapy
         raise SystemExit(
             f"Could not import Maya ({exc}). Run this script with mayapy, for "
@@ -129,7 +132,7 @@ def pivot_position(
             return None
         raw = np.asarray(value)
     flat = np.asarray(raw, dtype=np.float64).ravel()
-    return flat if flat.size == 3 else None
+    return flat if flat.size == _POINT_SIZE else None
 
 
 def export_model(
@@ -153,9 +156,7 @@ def export_model(
     cmds.currentUnit(linear="cm")
 
     members: list[str] = [
-        create_mesh(
-            om, cmds, f"{model}_head", data["rest_verts"], data["rest_faces"]
-        )
+        create_mesh(om, cmds, f"{model}_head", data["rest_verts"], data["rest_faces"])
     ]
     for key_prefix, suffix in SUB_MESHES:
         verts_key = f"{key_prefix}_rest_verts"
@@ -163,9 +164,7 @@ def export_model(
         if verts_key not in data.files or faces_key not in data.files:
             continue
         members.append(
-            create_mesh(
-                om, cmds, f"{model}_{suffix}", data[verts_key], data[faces_key]
-            )
+            create_mesh(om, cmds, f"{model}_{suffix}", data[verts_key], data[faces_key])
         )
 
     skipped: list[str] = []

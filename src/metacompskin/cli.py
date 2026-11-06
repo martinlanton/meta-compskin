@@ -23,10 +23,11 @@ them (``--weight-init noise`` starts from random values instead). If the file
 also carries ``joint_parents`` (the exporter writes them with the joints),
 ``--joint-hierarchy`` solves the deltas through that hierarchy, so a child joint
 follows its parent; by default every joint is solved on its own.
-``--distance-penalty`` pulls each joint's skin toward the joint,
-``--smoothing residual`` smooths the error instead of the result, and
-``--still-vertices static`` (or a distance) pins skin that does not move to
-the root and leaves it out of the solve. Pass ``--warm-up false`` to disable the unnormalised warm-up
+``--distance-penalty`` pulls each joint's skin toward the joint. With joints,
+alpha smooths the error instead of the result (``--smoothing reconstruction``
+smooths the result, as without joints), and skin that does not move is pinned
+to the root and left out of the solve (``--still-vertices none`` solves every
+vertex; a distance pins skin moving less than it). Pass ``--warm-up false`` to disable the unnormalised warm-up
 phase and run only normalised training (useful for research). CUDA is used
 automatically when this interpreter's torch sees a GPU.
 """
@@ -66,24 +67,24 @@ def _int_list(text: str) -> tuple[int, ...]:
 
 
 def _still_vertices_arg(text: str) -> str | float:
-    """Converts a --still-vertices argument: "static" or a distance.
+    """Converts a --still-vertices argument: "none", "static" or a distance.
 
     Args:
         text: The raw --still-vertices value.
 
     Returns:
-        "static", or the distance in model units as a float.
+        "none" or "static", or the distance in model units as a float.
 
     Raises:
-        argparse.ArgumentTypeError: If the value is neither.
+        argparse.ArgumentTypeError: If the value is none of these.
     """
-    if text == "static":
+    if text in ("none", "static"):
         return text
     try:
         return float(text)
     except ValueError as e:
         raise argparse.ArgumentTypeError(
-            f"--still-vertices must be 'static' or a distance, got {text!r}"
+            f"--still-vertices must be 'none', 'static' or a distance, got {text!r}"
         ) from e
 
 
@@ -172,14 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--smoothing",
         choices=["reconstruction", "residual"],
         default=None,
-        help="What alpha smooths: the skinned result (default) or the error.",
+        help="What alpha smooths: the skinned result or the error (the default "
+        "with joints; the result without).",
     )
     parser.add_argument(
         "--still-vertices",
         type=_still_vertices_arg,
         default=None,
-        help="Pin to the root and leave out of the solve: 'static' (no motion) or a "
-        "distance in model units (largest motion below it).",
+        help="Pin to the root and leave out of the solve: 'static' (no motion; the "
+        "default with joints), a distance in model units (largest motion below it), "
+        "or 'none' to solve every vertex (the default without joints).",
     )
     parser.add_argument(
         "--deltas-about-joints",
