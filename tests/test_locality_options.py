@@ -310,6 +310,18 @@ class TestStillVertices:
         assert compressor.still_vertices is None
 
 
+class TestJointAsRoot:
+    def test_skin_far_from_it_rests_on_it_as_on_a_synthetic_root(self, tmp_path):
+        # Joint 0 is far from the still last row, outside its nearest joints.
+        model = _with_still_region(make_grid_model())
+        on_joint = _run(tmp_path, "joint", model, root_joint=0, still_vertices="none")
+        synthetic = _run(
+            tmp_path, "synthetic", model, root_joint="new", still_vertices="none"
+        )
+
+        np.testing.assert_allclose(on_joint[20:, 0], synthetic[20:, -1], atol=0.05)
+
+
 class TestCommandLine:
     def _model(self, tmp_path):
         model = _with_still_region(make_grid_model())

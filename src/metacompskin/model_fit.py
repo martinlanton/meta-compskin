@@ -1460,6 +1460,9 @@ class SkinCompressor:
     def _build_candidate_mask(self) -> torch.Tensor | None:
         """Builds the (P', N) mask of joints allowed to weight each vertex.
 
+        The root influence, synthetic or one of the joints, may weight every
+        vertex, so any skin can fall back on it.
+
         Returns:
             Boolean tensor on self.device with shape (P', N) where P' includes
             the synthetic root if present. Returns None when there is no filter.
@@ -1473,12 +1476,13 @@ class SkinCompressor:
             self._joint_distances(), self.candidate_joints_per_vertex
         )
         mask_tensor = torch.from_numpy(mask).to(self.device)
-
-        # Add root row (all true) only for synthetic root
-        if self.root_joint is not None and self.root_joint == self.number_of_bones - 1:
+        if self.root_joint is None:
+            return mask_tensor
+        if mask.shape[0] < self.number_of_bones:  # a synthetic root, after the joints
             n_verts = mask.shape[1]
             root_row = torch.ones(1, n_verts, dtype=torch.bool, device=self.device)
-            mask_tensor = torch.cat([mask_tensor, root_row], dim=0)
+            return torch.cat([mask_tensor, root_row], dim=0)
+        mask_tensor[self.root_joint] = True
         return mask_tensor
 
     def _joint_distances(self) -> np.ndarray:
