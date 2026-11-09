@@ -6,6 +6,7 @@ residual-target smoothing and pinning still vertices to the root.
 
 import numpy as np
 import pytest
+import torch
 from conftest import make_grid_model, write_model_npz
 
 from metacompskin.cli import main
@@ -13,6 +14,7 @@ from metacompskin.maya_pipeline import CompressionSettings, compression_command
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
     SkinCompressor,
+    distance_penalty_per_vertex,
     distance_penalty_weights,
     distance_weights,
     geodesic_joint_distances,
@@ -145,6 +147,137 @@ class TestDistancePenaltySetting:
         )
 
         assert _nearest_share(pulled, model) > _nearest_share(free, model) + 0.05
+
+
+class TestJointSharePenalty:
+    """The penalty is taken on each vertex's share of the joints' weight."""
+
+    rho = torch.tensor([[0.0, 1.0], [3.0, 0.0], [0.0, 0.0]])  # (P'=3, N=2), root last
+
+    def test_weight_on_the_nearest_joint_costs_nothing(self):
+        weights = torch.tensor([[0.7, 0.0], [0.0, 0.8], [0.3, 0.2]])
+
+        per_vertex = distance_penalty_per_vertex(weights, self.rho, root_joint=2)
+
+        torch.testing.assert_close(per_vertex, torch.zeros(2))
+
+    def test_it_is_the_far_joints_share_of_the_joints_weight(self):
+        weights = torch.tensor([[0.3, 0.2], [0.1, 0.2], [0.6, 0.6]])
+
+        per_vertex = distance_penalty_per_vertex(weights, self.rho, root_joint=2)
+
+        torch.testing.assert_close(per_vertex, torch.tensor([3 * 0.1 / 0.4, 0.2 / 0.4]))
+
+    def test_moving_the_joints_weight_onto_the_root_does_not_lower_it(self):
+        weights = torch.tensor([[0.6, 0.4], [0.2, 0.4], [0.2, 0.2]])
+        onto_root = weights.clone()
+        onto_root[:2] *= 0.1
+        onto_root[2] = 1.0 - onto_root[:2].sum(dim=0)
+
+        torch.testing.assert_close(
+            distance_penalty_per_vertex(onto_root, self.rho, root_joint=2),
+            distance_penalty_per_vertex(weights, self.rho, root_joint=2),
+        )
+
+    def test_without_a_root_it_is_the_weighted_sum_of_normalised_weights(self):
+        weights = torch.tensor([[0.25, 0.5], [0.75, 0.5], [0.0, 0.0]])
+
+        per_vertex = distance_penalty_per_vertex(weights, self.rho, root_joint=None)
+
+        torch.testing.assert_close(per_vertex, (weights * self.rho).sum(dim=0))
+
+
+class _StrandsSkinBeforeTheLastPhase(SkinCompressor):
+    """Leaves chosen vertices fully on the root when the penalty's phases end.
+
+    Also records which weights were in use at that point, the support the refit
+    keeps to.
+    """
+
+    stranded: tuple[int, ...] = ()
+
+    def train(self, B_rt, TR, A, W, phase):  # noqa: N803
+        super().train(B_rt=B_rt, TR=TR, A=A, W=W, phase=phase)
+        self.phases_done = getattr(self, "phases_done", 0) + 1
+        if self.phases_done == len(self.schedule) - 1:
+            with torch.no_grad():
+                for vertex in self.stranded:
+                    W[:, vertex] = 0.0
+                    W[self.root_joint, vertex] = 1.0
+            self.support_before_refit = (W.detach() > 0).cpu().numpy()
+
+
+def _stranding_run(tmp_path, stranded=(), **settings):
+    model = make_grid_model()
+    compressor = _StrandsSkinBeforeTheLastPhase(
+        model_data=model,
+        rest_joint_matrices=_grid_joints(),
+        **{**_FAST, "distance_penalty": 1.0, **settings},
+    )
+    compressor.stranded = stranded
+    compressor.run(tmp_path / "compressed.npz")
+    weights = np.load(tmp_path / "compressed.npz")["weights"]  # (N, P')
+    return compressor, weights, _distances(model).argmin(axis=0)
+
+
+class TestDistancePenaltyRefit:
+    def test_the_last_phase_stays_inside_the_support_plus_the_nearest_joint(
+        self, tmp_path
+    ):
+        # K=3 leaves the stranded vertices room for more than their nearest joint.
+        compressor, weights, nearest = _stranding_run(
+            tmp_path, stranded=(0, 12), distance_penalty_guard=0.0, max_influences=3
+        )
+
+        allowed = compressor.support_before_refit.copy()
+        allowed[nearest, np.arange(allowed.shape[1])] = True
+        assert not (weights.T[~allowed] > 0).any()
+
+    def test_needs_a_phase_after_the_penalty(self, tmp_path, grid_model_data):
+        compressor = SkinCompressor(
+            model_data=grid_model_data,
+            rest_joint_matrices=_grid_joints(),
+            distance_penalty=0.1,
+            warm_up_enabled=False,
+            **_FAST,
+        )
+
+        with pytest.raises(ValueError, match="refit"):
+            compressor.run(tmp_path / "compressed.npz")
+
+    def test_a_single_phase_keeps_the_penalty_without_a_refit(self, tmp_path):
+        weights = _run(
+            tmp_path,
+            "single",
+            distance_penalty=0.1,
+            distance_penalty_refit=False,
+            warm_up_enabled=False,
+        )
+
+        np.testing.assert_allclose(weights.sum(axis=1), 1.0, atol=1e-5)
+
+
+class TestDistancePenaltyGuard:
+    @pytest.mark.parametrize("guard", [-0.1, 1.0])
+    def test_must_be_a_share_below_one(self, grid_model_data, guard):
+        with pytest.raises(ValueError, match="distance_penalty_guard"):
+            SkinCompressor(
+                model_data=grid_model_data,
+                rest_joint_matrices=_grid_joints(),
+                distance_penalty=0.1,
+                distance_penalty_guard=guard,
+            )
+
+    def test_skin_left_on_the_root_gets_its_nearest_joint_back(self, tmp_path):
+        compressor, weights, nearest = _stranding_run(tmp_path, stranded=(0, 12))
+
+        np.testing.assert_array_equal(compressor.guarded_vertices, [0, 12])
+        assert (weights[[0, 12], nearest[[0, 12]]] >= 0.2 - 1e-6).all()
+
+    def test_no_skin_is_guarded_when_none_was_left_on_the_root(self, tmp_path):
+        compressor, _, _ = _stranding_run(tmp_path)
+
+        assert len(compressor.guarded_vertices) == 0
 
 
 class TestSmoothing:
@@ -332,6 +465,10 @@ class TestCommandLine:
                 "2",
                 "--distance-penalty",
                 "0.1",
+                "--distance-penalty-refit",
+                "true",
+                "--distance-penalty-guard",
+                "0.3",
                 "--smoothing",
                 "residual",
                 "--still-vertices",
@@ -404,7 +541,11 @@ class TestPipelineCommand:
 
     def test_the_options_are_forwarded(self, tmp_path):
         settings = CompressionSettings(
-            distance_penalty=0.05, smoothing="residual", still_vertices="static"
+            distance_penalty=0.05,
+            distance_penalty_refit=False,
+            distance_penalty_guard=0.3,
+            smoothing="residual",
+            still_vertices="static",
         )
 
         command = compression_command(
@@ -412,5 +553,7 @@ class TestPipelineCommand:
         )
 
         assert command[command.index("--distance-penalty") + 1] == "0.05"
+        assert command[command.index("--distance-penalty-refit") + 1] == "False"
+        assert command[command.index("--distance-penalty-guard") + 1] == "0.3"
         assert command[command.index("--smoothing") + 1] == "residual"
         assert command[command.index("--still-vertices") + 1] == "static"

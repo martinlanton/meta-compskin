@@ -107,6 +107,11 @@ class CompressionSettings:
             None leaves the choice to the compressor (distance with joints).
         distance_penalty: Strength of the penalty on weight far from each
             vertex's nearest joint; None leaves it off.
+        distance_penalty_refit: Whether the last phase refits without the
+            penalty; None keeps the compressor's default (True).
+        distance_penalty_guard: Share of their weight that moving vertices
+            the penalty left on the root keep on their nearest joint during
+            the refit; None keeps the compressor's default (0.2).
         smoothing: ``"reconstruction"`` or ``"residual"``; None keeps the
             compressor's default (residual with joints, reconstruction
             without).
@@ -131,6 +136,8 @@ class CompressionSettings:
     use_joint_hierarchy: bool = False
     weight_init: str | None = None
     distance_penalty: float | None = None
+    distance_penalty_refit: bool | None = None
+    distance_penalty_guard: float | None = None
     smoothing: str | None = None
     still_vertices: str | float | None = None
 
@@ -501,6 +508,8 @@ def compression_command(
         "--root-joint": settings.root_joint,
         "--weight-init": settings.weight_init,
         "--distance-penalty": settings.distance_penalty,
+        "--distance-penalty-refit": settings.distance_penalty_refit,
+        "--distance-penalty-guard": settings.distance_penalty_guard,
         "--smoothing": settings.smoothing,
         "--still-vertices": settings.still_vertices,
     }
