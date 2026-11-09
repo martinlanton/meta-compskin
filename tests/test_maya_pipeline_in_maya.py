@@ -102,7 +102,7 @@ def test_rig_keys_follow_the_requested_frame_step_and_interpolation(
     outcome = pipeline_report["pipeline"]
 
     assert outcome["playback_end"] == 4 * len(pipeline_report["shape_names"])
-    assert outcome["tangent_types"] == ["spline"]
+    assert outcome["tangent_angles"] == [0.0]
 
 
 def test_frames_are_labelled_with_the_blendshape_target_names(pipeline_report):

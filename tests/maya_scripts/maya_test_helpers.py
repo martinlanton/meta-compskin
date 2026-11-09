@@ -65,3 +65,13 @@ def driver_tangent_types(rig) -> list[str]:
         types.update(cmds.keyTangent(curve, q=True, inTangentType=True))
         types.update(cmds.keyTangent(curve, q=True, outTangentType=True))
     return sorted(types)
+
+
+def driver_tangent_angles(rig) -> list[float]:
+    """Distinct in and out tangent angles, in degrees, of every curve keying the drivers."""
+    curves = cmds.listConnections(rig.drivers, type="animCurve", source=True) or []
+    angles = set()
+    for curve in curves:
+        angles.update(cmds.keyTangent(curve, q=True, inAngle=True))
+        angles.update(cmds.keyTangent(curve, q=True, outAngle=True))
+    return sorted({round(angle, 6) + 0.0 for angle in angles})
