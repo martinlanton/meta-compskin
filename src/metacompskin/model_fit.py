@@ -51,6 +51,15 @@ _STILL_OFF = "none"
 _STATIC_MOTION_FRACTION = (
     1e-3  # a vertex is static below this share of the largest motion
 )
+_JOINT_SHARE_FLOOR = (
+    1e-3  # smallest joints' weight a vertex's penalty share is taken on
+)
+_DEFAULT_PENALTY_GUARD = (
+    0.2  # weight the guard keeps on a stranded vertex's nearest joint
+)
+_STRANDED_ROOT_SHARE = (
+    0.999  # moving skin with this share on the root counts as stranded
+)
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -252,6 +261,42 @@ def distance_penalty_weights(
     nearest = distances.min(axis=0)
     scale = np.maximum(nearest, floor if floor is not None else 1e-12)
     return np.clip(distances / scale - 1.0, 0.0, None) ** 2
+
+
+def distance_penalty_per_vertex(
+    weights: torch.Tensor,
+    penalty_weights: torch.Tensor,
+    root_joint: int | None = None,
+) -> torch.Tensor:
+    r"""Each vertex's distance penalty: how far its joints' weight sits from it.
+
+    .. math::
+
+        \phi_i = \frac{\sum_{j \ne r} w_{ij} \rho_{ij}}
+                       {\max(\sum_{j \ne r} w_{ij},\ 10^{-3})}
+
+    with :math:`\rho` from :func:`distance_penalty_weights` and :math:`r` the
+    root influence. The penalty is taken on the joints' share of the weight,
+    not on the weights themselves, so moving weight from every joint onto the
+    root earns nothing: the penalty cannot be lowered by weakening the joints
+    while their transforms grow to compensate.
+
+    Args:
+        weights: Skin weights, shape (P', N), one row per influence.
+        penalty_weights: :math:`\rho`, shape (P', N). The root's row is not used.
+        root_joint: Row of the root influence, or None without one.
+
+    Returns:
+        :math:`\phi_i` for every vertex, shape (N,).
+    """
+    joint_weights = weights
+    if root_joint is not None:
+        keep = torch.ones(weights.shape[0], dtype=torch.bool, device=weights.device)
+        keep[root_joint] = False
+        joint_weights = weights[keep]
+        penalty_weights = penalty_weights[keep]
+    far = (joint_weights * penalty_weights).sum(dim=0)
+    return far / joint_weights.sum(dim=0).clamp_min(_JOINT_SHARE_FLOOR)
 
 
 def static_vertex_mask(
@@ -595,6 +640,20 @@ def _resolve_weight_init(requested: str | None, has_joint_matrices: bool) -> str
     return requested
 
 
+def _resolve_distance_penalty_guard(requested: float) -> float:
+    """Validates the distance_penalty_guard argument.
+
+    Raises:
+        ValueError: If it is not a share in [0, 1).
+    """
+    if not 0.0 <= requested < 1.0:
+        raise ValueError(
+            f"distance_penalty_guard={requested} must be a share of the weight, "
+            "at least 0 and below 1"
+        )
+    return float(requested)
+
+
 def _resolve_distance_penalty(requested: float, has_joint_matrices: bool) -> float:
     """Validates the distance_penalty argument.
 
@@ -787,6 +846,12 @@ class SkinCompressor:
         weight_init: "distance" or "noise", where the weights start; see the
             constructor.
         distance_penalty: Strength of the far-joint weight penalty, 0 when off.
+        distance_penalty_refit: Whether the last phase refits without the
+            penalty, inside the support the penalty left.
+        distance_penalty_guard: Share of a stranded vertex's weight the
+            refit keeps on its nearest joint, 0 when off.
+        guarded_vertices: Vertices the guard gave their joints back in the
+            last run(), indices into the mesh (empty when none).
         smoothing: "reconstruction" or "residual", what alpha smooths, after
             the default is resolved.
         still_vertices: "static", a distance, or None when nothing is pinned,
@@ -853,6 +918,8 @@ class SkinCompressor:
         distance_penalty: float = 0.0,
         smoothing: str | None = None,
         still_vertices: str | float | None = None,
+        distance_penalty_refit: bool = True,
+        distance_penalty_guard: float = _DEFAULT_PENALTY_GUARD,
     ):
         """Initializes the SkinCompressor.
 
@@ -918,8 +985,10 @@ class SkinCompressor:
                 with rest_joint_matrices and "noise" without. "distance" is
                 not allowed without joint matrices.
             distance_penalty: Strength of a penalty on weight that sits on a
-                joint farther from the vertex than its nearest joint (see
-                :func:`distance_penalty_weights`), relative to the data's
+                joint farther from the vertex than its nearest joint, taken on
+                each vertex's share of the joints' weight so that weakening the
+                joints does not lower it (see :func:`distance_penalty_per_vertex`
+                and :func:`distance_penalty_weights`), relative to the data's
                 mean squared motion so it does not depend on the scene unit.
                 0 (default) turns it off. Needs joint matrices.
             smoothing: What the Laplacian smoothness term smooths, weighted by
@@ -939,6 +1008,18 @@ class SkinCompressor:
                 their place in the mesh for distances and smoothing; fewer
                 vertices to solve makes the run faster. Pinning needs a root
                 influence.
+            distance_penalty_refit: With the distance penalty, refit in the
+                last phase: the penalty is off, and each vertex keeps to the
+                joints it holds when the earlier phases end, plus its nearest
+                joint. This recovers most of the accuracy the penalty costs
+                while keeping its locality. True (default); the schedule then
+                needs at least two phases.
+            distance_penalty_guard: With the refit and a root influence,
+                moving skin the penalty left (almost) fully on the root gets
+                back its candidate joints and its distance start, and keeps at
+                least this share of its weight on its nearest joint for the
+                whole refit, so no moving skin is stranded on the root. 0.2
+                (default); 0 turns the guard off.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -952,8 +1033,9 @@ class SkinCompressor:
                 root joint that has a parent; if deltas_about_joints is set
                 without joint_parents; if weight_init is unknown or "distance"
                 without joint matrices; if distance_penalty is negative or set
-                without joint matrices; if smoothing is unknown; if
-                still_vertices is invalid or set without a root.
+                without joint matrices; if distance_penalty_guard is not in
+                [0, 1); if smoothing is unknown; if still_vertices is invalid
+                or set without a root.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -1040,6 +1122,12 @@ class SkinCompressor:
         self.init_weight = init_weight
         self.power = power
         self._set_fit_options(weight_init, distance_penalty, smoothing, still_vertices)
+        self.distance_penalty_refit = bool(distance_penalty_refit)
+        self.distance_penalty_guard = _resolve_distance_penalty_guard(
+            distance_penalty_guard
+        )
+        self.guarded_vertices: np.ndarray = np.empty(0, dtype=np.int64)
+        self._guard_floor: tuple[torch.Tensor, torch.Tensor] | None = None
         self.candidate_joints_per_vertex = _resolve_candidate_joints(
             candidate_joints_per_vertex,
             has_joint_matrices=self.rest_joint_matrices_3x4 is not None,
@@ -1213,6 +1301,9 @@ class SkinCompressor:
         W.requires_grad_()
 
         for index, phase in enumerate(self.schedule, start=1):
+            if index == len(self.schedule) and self._refits():
+                with torch.no_grad():
+                    self._start_refit(W, moving)
             print(
                 f"phase {index}/{len(self.schedule)}: iterations={phase.iterations} "
                 f"K={phase.max_influences} L={phase.total_nnz_B_rt} "
@@ -1396,16 +1487,27 @@ class SkinCompressor:
         self._fixed_error: tuple[torch.Tensor, int] | None = None
         self._smoothing_offset: torch.Tensor | None = None
 
+    def _refits(self) -> bool:
+        """Whether run() refits without the distance penalty in the last phase."""
+        return self.distance_penalty > 0 and self.distance_penalty_refit
+
     def _check_schedule_fits_model(self) -> None:
         """Rejects a schedule the projections cannot apply to this model.
 
         Raises:
             ValueError: If self.schedule is empty, or a phase keeps
                 max_influences >= number_of_bones weights per vertex, or more
-                than 6*S*P delta coefficients.
+                than 6*S*P delta coefficients, or the refit has no phase of
+                its own.
         """
         if not self.schedule:
             raise ValueError("schedule must contain at least one TrainingPhase")
+        if self._refits() and len(self.schedule) == 1:
+            raise ValueError(
+                "distance_penalty_refit needs a phase after the penalty's, but the "
+                "schedule has a single phase: keep the warm-up, give more stages, "
+                "or set distance_penalty_refit=False"
+            )
         n_coefficients = 6 * self.model_data.n_blendshapes * self.number_of_bones
         for index, phase in enumerate(self.schedule, start=1):
             if phase.max_influences >= self.number_of_bones:
@@ -1549,6 +1651,8 @@ class SkinCompressor:
         penalised. The scale is the data's mean squared motion, so the
         strength does not depend on the scene unit.
         """
+        self.guarded_vertices = np.empty(0, dtype=np.int64)
+        self._guard_floor = None
         if self.distance_penalty == 0:
             return
         graph = _edge_length_graph(
@@ -1567,12 +1671,104 @@ class SkinCompressor:
         )
 
     def _penalty_term(self, W_n: torch.Tensor) -> torch.Tensor:  # noqa: N803
-        """distance_penalty times the mean, over all vertices, of sum_j w_ij rho_ij."""
+        """distance_penalty times the mean, over all vertices, of each one's penalty.
+
+        See :func:`distance_penalty_per_vertex`; pinned vertices count as zero.
+        """
         if self._penalty_weights is None:
             raise RuntimeError("the distance penalty is prepared by run()")
         n_verts = self.model_data.rest_verts.shape[0]
-        weighted = (W_n * self._penalty_weights).sum() / n_verts
-        return self.distance_penalty * self._motion_energy * weighted
+        per_vertex = distance_penalty_per_vertex(
+            W_n, self._penalty_weights, self.root_joint
+        )
+        return self.distance_penalty * self._motion_energy * per_vertex.sum() / n_verts
+
+    def _start_refit(self, W: torch.Tensor, solved: torch.Tensor | None) -> None:  # noqa: N803
+        """Turns the penalty off and keeps each vertex to its support plus its nearest joint.
+
+        With the guard, stranded skin (see _stranded) gets its candidate
+        joints and its distance start back and keeps a floor on its nearest
+        joint (see _apply_guard_floor).
+
+        Args:
+            W: Raw weights at the end of the penalty's phases, shape (P', n).
+            solved: Indices of the solved vertices, or None when all are solved.
+        """
+        self._penalty_weights = None
+        n_verts = self.model_data.rest_verts.shape[0]
+        columns = np.arange(n_verts) if solved is None else solved.cpu().numpy()
+        distances = self._joint_distances()[:, columns]  # (P, n), supplied joints
+        nearest = torch.from_numpy(self._nearest_joint(distances)).to(self.device)
+        keep = W > 0
+        keep[nearest, torch.arange(W.shape[1], device=self.device)] = True
+        stranded = self._stranded(W, columns)
+        if stranded.any():
+            self._give_joints_back(W, keep, stranded, distances)
+            vertices = torch.nonzero(stranded).squeeze(1)
+            self._guard_floor = (vertices, nearest[vertices])
+            self.guarded_vertices = columns[stranded.cpu().numpy()]
+        self.candidate_mask = keep
+
+    def _nearest_joint(self, distances: np.ndarray) -> np.ndarray:
+        """Each vertex's nearest joint other than the root, shape (n,)."""
+        if self.root_joint is not None and self.root_joint < distances.shape[0]:
+            distances = distances.copy()
+            distances[self.root_joint] = np.inf
+        return distances.argmin(axis=0)
+
+    def _stranded(self, W: torch.Tensor, columns: np.ndarray) -> torch.Tensor:  # noqa: N803
+        """Moving vertices (almost) fully on the root, when the guard is on, shape (n,)."""
+        if self.distance_penalty_guard == 0 or self.root_joint is None:
+            return torch.zeros(W.shape[1], dtype=torch.bool, device=self.device)
+        moving = ~static_vertex_mask(self.model_data.deltas)[columns]
+        on_root = W[self.root_joint] >= _STRANDED_ROOT_SHARE * W.sum(dim=0)
+        return torch.from_numpy(moving).to(self.device) & on_root
+
+    def _give_joints_back(
+        self,
+        W: torch.Tensor,  # noqa: N803
+        keep: torch.Tensor,
+        stranded: torch.Tensor,
+        distances: np.ndarray,
+    ) -> None:
+        """Restarts stranded vertices from the distance start over their candidate joints.
+
+        Args:
+            W: Raw weights, shape (P', n), changed in place.
+            keep: Support the refit allows, shape (P', n), changed in place.
+            stranded: Vertices to restart, shape (n,).
+            distances: Joint-to-vertex distances of the solved vertices, (P, n).
+        """
+        start = distance_weights(distances, self.max_influences)  # (P, n)
+        if start.shape[0] < self.number_of_bones:  # synthetic root row
+            start = np.vstack([start, np.zeros((1, start.shape[1]))])
+        start_tensor = torch.from_numpy(start).float().to(self.device)
+        if self.candidate_mask is None:
+            keep[:, stranded] = True
+        else:
+            keep[:, stranded] = self.candidate_mask[:, stranded].bool()
+        W[:, stranded] = start_tensor[:, stranded] * W[:, stranded].sum(dim=0)
+        if self.root_joint is not None:
+            W[self.root_joint].clamp_(min=_ROOT_WEIGHT_FLOOR)
+
+    def _apply_guard_floor(self, W: torch.Tensor) -> torch.Tensor:  # noqa: N803
+        """Keeps guarded vertices' nearest joint at the floor; returns weights to rank.
+
+        Args:
+            W: Raw weights, shape (P', n), changed in place.
+
+        Returns:
+            W itself, or a copy in which the guarded entries rank first so the
+            top-K cut always keeps them.
+        """
+        if self._guard_floor is None:
+            return W
+        vertices, joints = self._guard_floor
+        floor = self.distance_penalty_guard * W[:, vertices].sum(dim=0)
+        W[joints, vertices] = torch.maximum(W[joints, vertices], floor)
+        ranked = W.clone()
+        ranked[joints, vertices] = torch.inf
+        return ranked
 
     def _data_term(self, error: torch.Tensor) -> torch.Tensor:
         """The fitting error term, averaged over every vertex including pinned ones."""
@@ -1984,8 +2180,9 @@ class SkinCompressor:
         """
         if self.candidate_mask is not None:
             W *= self.candidate_mask
-        cutoff = torch.topk(W, phase.max_influences + 1, dim=0).values[-1, :]
-        W.copy_((cutoff < W) * W)
+        ranked = self._apply_guard_floor(W)
+        cutoff = torch.topk(ranked, phase.max_influences + 1, dim=0).values[-1, :]
+        W.copy_((cutoff < ranked) * W)
         W.clamp_(min=0)
         if self.root_joint is not None:
             W[self.root_joint].clamp_(min=_ROOT_WEIGHT_FLOOR)

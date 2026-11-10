@@ -75,7 +75,9 @@ Input .npz (blendshapes)
 | `iterations` | 10000 | Steps per stage; an int is one stage (two phases), a sequence anneals K over more phases. Warm-up runs at M (mask width) when geodesic filtering is on. |
 | `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | M nearest joints (geodesic) a vertex may be weighted to; also the annealing ceiling; 0 disables |
 | `weight_init` | `"distance"` with matrices, `"noise"` else | Starting weights: distance bind over the K nearest joints (falloff power 4) with static vertices on the root, or tiny noise (the anonymous path, pinned) |
-| `distance_penalty` | 0 | With matrices: penalty on weight far from each vertex's nearest joint, scaled by mean(A²) |
+| `distance_penalty` | 0 | With matrices: penalty on the share of a vertex's joint weight on joints farther than its nearest, scaled by mean(A²); root weight does not lower it |
+| `distance_penalty_refit` | `True` | With the penalty: the last phase refits without it, each vertex limited to its support plus its nearest joint; needs two or more phases |
+| `distance_penalty_guard` | 0.2 | With the refit: moving skin left on the root gets its joints back and keeps this share on its nearest joint; 0 off |
 | `smoothing` | `"residual"` with joint matrices, `"reconstruction"` else | `"residual"` applies the alpha Laplacian to BC − A instead of BC |
 | `still_vertices` | `"static"` with joint matrices and a root, off else | `"static"` or a model-unit distance: pin those vertices to the root and skip them in the solve (objective unchanged, faster); `"none"` turns it off |
 | `joint_parents` | `None` | Optional (CLI `--joint-hierarchy`). With joint matrices: parent index per joint (-1 none). Each joint's own delta is summed down the hierarchy; output adds `jointParents` and `localShapeXform`. `deltas_about_joints=True` solves own deltas about each joint instead of the mesh centre. |

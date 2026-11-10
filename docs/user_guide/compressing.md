@@ -48,7 +48,9 @@ Constructor arguments:
 | `max_influences` | 8 | $K$, non-zero weights per vertex. Must be less than $P$. |
 | `candidate_joints_per_vertex` | `min(K+2, P-1)` with joint matrices | $M$, the nearest joints (along the mesh surface) a vertex may take its weights from, so each joint drives the region around it. `0` turns the filter off. Needs `rest_joint_matrices`; $K \le M < P$. Also the ceiling of an annealed budget. See [Custom joints](#custom-joints). |
 | `weight_init` | `"distance"` with joint matrices, `"noise"` without | Where the skin weights start. `"distance"` weights each vertex to its $K$ nearest joints by distance and puts vertices no shape moves on the root; `"noise"` starts from tiny random values. See [Starting weights](#starting-weights). |
-| `distance_penalty` | 0 (off) | With joint matrices, pulls each joint's skin toward the joint by penalising weight on joints farther than a vertex's nearest one. Scale-free. See [Keeping joints local](#keeping-joints-local). |
+| `distance_penalty` | 0 (off) | With joint matrices, pulls each joint's skin toward the joint by penalising the share of a vertex's joint weight that sits on joints farther than its nearest one. Scale-free. See [Keeping joints local](#keeping-joints-local). |
+| `distance_penalty_refit` | `True` | With the penalty, the last phase refits without it, inside the support it left. |
+| `distance_penalty_guard` | 0.2 | With the refit, moving skin the penalty left on the root keeps this share on its nearest joint; 0 turns it off. |
 | `smoothing` | `"residual"` with joint matrices, `"reconstruction"` without | What `alpha` smooths: the error between the result and the target (`"residual"`), which keeps fine detail the target has, or the skinned result itself (`"reconstruction"`, the paper's term). See [Smoothing the error instead of the result](#smoothing-the-error-instead-of-the-result). |
 | `still_vertices` | `"static"` with joint matrices and a root, `"none"` otherwise | Skin to pin to the root and leave out of the solve, which makes the run faster: `"static"` for skin no shape moves, a distance in model units for skin moving less than that, or `"none"` to solve every vertex. Pinning needs the root influence. See [Skin that does not move](#skin-that-does-not-move). |
 | `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
@@ -293,9 +295,25 @@ Example script: `examples/example_custom_joints.py`.
 The candidate mask and the starting weights decide which joints a vertex can
 use and where it starts. `distance_penalty` adds a preference inside that
 choice: weight on a joint farther from the vertex than its nearest joint
-costs, in proportion to how much farther (zero on the nearest joint and on the
-root, growing with the square of the extra relative distance). Each joint's
-skin is pulled toward the joint for the whole solve.
+costs, in proportion to how much farther (zero on the nearest joint, growing
+with the square of the extra relative distance). The cost is taken on the
+vertex's share of its joints' weight, so handing weight to the root does not
+lower it: each joint keeps its hold on the skin around it rather than a weak
+grip it makes up for by moving further.
+
+Two parts of the solve go with the penalty by default:
+
+- **The refit** (`distance_penalty_refit=True`). The penalty acts in every
+  phase but the last. The last phase turns it off and refits with each vertex
+  limited to the joints it holds by then, plus its nearest joint. This
+  recovers most of the accuracy the penalty costs, keeps its locality, and
+  keeps the joints' rotations smaller. It needs a phase after the penalty's,
+  which the default schedule has.
+- **The guard** (`distance_penalty_guard=0.2`). Skin that moves but that the
+  penalty left fully on the root would no longer follow any joint. At the
+  start of the refit it gets its candidate joints and its distance start back,
+  and keeps at least this share of its weight on its nearest joint for the
+  whole refit. `guarded_vertices` lists that skin after `run()`.
 
 ```python
 compressor = SkinCompressor(
@@ -307,8 +325,10 @@ compressor = SkinCompressor(
 
 The strength is relative to the data's motion, so the same value means the
 same trade on any scene unit, but not on any rig: it trades accuracy for
-locality, and how much of each depends on the joint layout. Raise it until the
-error starts to climb. Off by default.
+locality, and how much of each depends on the joint layout. Small strengths
+already give most of the gain; raise it until the error starts to climb. Off
+by default. Since version 0.5.0 the penalty is taken on shares, so strengths
+chosen for earlier versions do not carry over.
 
 ### Smoothing the error instead of the result
 

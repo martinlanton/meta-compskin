@@ -47,12 +47,20 @@ Two terms change this:
   of the result and stops penalising detail that is in the target. Without
   joint matrices the default is the paper's term above.
 - `distance_penalty` $\lambda$ (with joint matrices) adds
-  $\lambda\,\overline{\lVert A\rVert^2}\,\frac{1}{N}\sum_i\sum_j w_{ij}\rho_{ij}$,
+  $\lambda\,\overline{\lVert A\rVert^2}\,\frac{1}{N}\sum_i
+  \frac{\sum_{j \ne r} w_{ij}\rho_{ij}}{\max(\sum_{j \ne r} w_{ij},\ 10^{-3})}$,
   with $\rho_{ij} = \max(0,\ d_{ij}/d_i^{(1)} - 1)^2$ from the surface
   distance $d_{ij}$ between vertex $i$ and joint $j$ and the vertex's
-  distance $d_i^{(1)}$ to its nearest joint. It is zero on the nearest joint
-  and on the root, and scaled by the data's mean squared motion so
-  $\lambda$ does not depend on the scene unit. Off by default.
+  distance $d_i^{(1)}$ to its nearest joint, and $r$ the root. It is zero on
+  the nearest joint, taken on the joints' share of each vertex's weight so
+  that moving weight onto the root does not lower it, and scaled by the data's
+  mean squared motion so $\lambda$ does not depend on the scene unit. Off by
+  default. With it, the last phase refits without the penalty
+  (`distance_penalty_refit`): each vertex may only use the joints it holds
+  when the earlier phases end, plus its nearest joint. Moving skin left fully
+  on the root at that point restarts from the distance start over its
+  candidate joints and keeps at least `distance_penalty_guard` of its weight
+  on its nearest joint.
 
 With `still_vertices` (`"static"` by default with joint matrices and a root),
 the vertices it selects are fixed on the root and left
@@ -207,7 +215,7 @@ tables are in millimetres). How to interpret them is in
 | `weight_init` (custom joints only) | `"distance"` | | `"noise"` returns to the random start: less local joints, slightly higher error on real rigs |
 | `total_nnz_B_rt` ($L$) | 6000 | more non-zero deltas, better fit, less compression | more compression, more error; cannot exceed $6 S P$ |
 | `alpha` | per model, 10 or 50 | smoother, blurrier result (with `smoothing="residual"`, smoother weights without blurring detail) | sharper, risk of noisy weights; lower for dense meshes |
-| `distance_penalty` (custom joints only) | 0 | each joint's skin closer to the joint, higher error | |
+| `distance_penalty` (custom joints only) | 0 | each joint holds more of the skin around it, higher average error | |
 | `power` ($p$) | 2 | high values (12) minimise the *worst* error at the cost of smoothness; needs more capacity and many more iterations | |
 | `warm_up_enabled` | `True` | (not adjustable: boolean) | disables the unnormalised warm-up and runs only normalised phases; faster solve with slightly worse error; used in research to measure the impact of the warm-up separately from other solver components |
 

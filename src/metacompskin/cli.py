@@ -170,6 +170,20 @@ def build_parser() -> argparse.ArgumentParser:
         "(needs joints; default 0, off).",
     )
     parser.add_argument(
+        "--distance-penalty-refit",
+        type=lambda x: x.lower() in ("true", "on", "1", "yes"),
+        default=None,
+        help="With the distance penalty, refit without it in the last phase "
+        "(true/false, default true).",
+    )
+    parser.add_argument(
+        "--distance-penalty-guard",
+        type=float,
+        default=None,
+        help="Share of its weight that moving skin the penalty left on the root keeps "
+        "on its nearest joint during the refit (default 0.2; 0 turns it off).",
+    )
+    parser.add_argument(
         "--smoothing",
         choices=["reconstruction", "residual"],
         default=None,
@@ -269,6 +283,8 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "root_joint",
         "weight_init",
         "distance_penalty",
+        "distance_penalty_refit",
+        "distance_penalty_guard",
         "smoothing",
         "still_vertices",
     ):
