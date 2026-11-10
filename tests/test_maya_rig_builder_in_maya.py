@@ -202,6 +202,11 @@ def test_spline_interpolation_blends_the_frames_between_keys(maya_report):
     away_from_previous = np.abs(between - keyed[:-1]).max(axis=(1, 2))
     away_from_next = np.abs(between - keyed[1:]).max(axis=(1, 2))
 
-    assert scenario["tangent_types"] == ["spline"]
     assert (away_from_previous > _ATOL).all()
     assert (away_from_next > _ATOL).all()
+
+
+def test_spline_keys_have_flat_tangents(maya_report):
+    scenario = maya_report["spline_back_to_neutral"]
+
+    assert scenario["tangent_angles"] == [0.0]

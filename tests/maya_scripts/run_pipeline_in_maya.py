@@ -25,6 +25,7 @@ from maya import cmds  # noqa: E402
 from maya_test_helpers import (  # noqa: E402
     SOURCE_NAME,
     create_mesh,
+    driver_tangent_angles,
     driver_tangent_types,
     new_scene_with_source,
     sample_rig,
@@ -72,6 +73,7 @@ def run_pipeline(scene, python: str, output_dir: Path) -> dict:
         "frames": frames,
         "current_shape": current_shape,
         "tangent_types": driver_tangent_types(result.rig),
+        "tangent_angles": driver_tangent_angles(result.rig),
         "playback_end": cmds.playbackOptions(q=True, maxTime=True),
         "source_world_matrix": world_matrix(source),
         "source_skin_clusters": skin_clusters_on(source),

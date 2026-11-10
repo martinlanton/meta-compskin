@@ -23,6 +23,7 @@ maya.standalone.initialize()
 from maya import cmds  # noqa: E402
 from maya_test_helpers import (  # noqa: E402
     create_mesh,
+    driver_tangent_angles,
     driver_tangent_types,
     new_scene_with_source,
     sample_rig,
@@ -56,6 +57,7 @@ def describe_rig(rig, source: str, times) -> dict:
             cmds.playbackOptions(q=True, maxTime=True),
         ],
         "tangent_types": driver_tangent_types(rig),
+        "tangent_angles": driver_tangent_angles(rig),
     }
 
 

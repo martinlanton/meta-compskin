@@ -57,6 +57,11 @@ _REQUIRED_KEYS = ("rest", "quads", "weights", "restXform", "shapeXform")
 _REST_MATCH_TOLERANCE = 1e-4
 # Maya tangent types offered for the keys between two shapes.
 _INTERPOLATIONS = ("step", "linear", "spline", "clamped", "plateau", "auto", "flat")
+# (in, out) tangent types where they differ from the interpolation's own name.
+# Spline blends key flat tangents, as animators do: Maya's spline tangents take
+# their slope from the neighbouring keys, so a channel overshoots between two
+# equal keys.
+_TANGENT_TYPES = {"step": ("linear", "step"), "spline": ("flat", "flat")}
 
 
 @dataclass(frozen=True)
@@ -407,9 +412,7 @@ def _tangent_types(interpolation: str) -> tuple[str, str]:
             f"interpolation must be one of {', '.join(_INTERPOLATIONS)}; "
             f"got {interpolation!r}."
         )
-    if interpolation == "step":
-        return "linear", "step"
-    return interpolation, interpolation
+    return _TANGENT_TYPES.get(interpolation, (interpolation, interpolation))
 
 
 @dataclass(frozen=True)
