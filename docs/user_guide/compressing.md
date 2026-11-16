@@ -80,9 +80,26 @@ compressor.run("exports/head_60j.npz")
 ```
 
 `alpha` is looked up by model name in `metacompskin.constants`
-(the sample heads and anything unknown get 10). Your
-own heads get 10 unless you pass `alpha=` to `from_npz` or set it on the
-compressor. Lower values suit dense meshes, higher values sparse ones.
+(10 for the coarse sample heads, 50 for the dense ones, 10 for anything
+unknown). Your own heads get 10 unless you pass `alpha=` to `from_npz` or set
+it on the compressor. The Laplacian is not scaled by edge length, so a denser
+mesh needs a *larger* alpha for the same smoothing.
+
+**Experimental: alpha from the head.** `SmoothingAlphaEstimator` estimates alpha
+from the rest mesh and the shapes, without depending on the scene unit. It was
+calibrated in the paper's setting (anonymous bones, smoothing on the
+reconstruction), is not used by default, and its rule may change. **Use it on
+heads in centimetres only:** in other units it does not work yet, because the
+solver's own results still depend on the unit. The
+`metacompskin.alpha_estimation` API page explains how it works.
+
+```python
+from metacompskin import BlendshapeModelData, SmoothingAlphaEstimator
+
+model_data = BlendshapeModelData.from_npz("head.npz")
+alpha = SmoothingAlphaEstimator().estimate(model_data)  # warns: experimental
+model_data = BlendshapeModelData.from_npz("head.npz", alpha=alpha)
+```
 
 ## Choosing settings
 

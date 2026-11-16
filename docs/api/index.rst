@@ -17,6 +17,7 @@ everywhere, including inside Maya where PyTorch is not installed:
        MayaBlendshapeExporter,
        MayaBlendshapeModelData,
        CompressedSkinningSolver,
+       SmoothingAlphaEstimator,  # experimental
        build_skinned_rig,
        compress_and_build_rig,
    )
@@ -50,5 +51,6 @@ Supporting modules
 
    cli
    constants
+   alpha_estimation
    utils
    riglogic

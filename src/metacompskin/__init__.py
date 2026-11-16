@@ -16,6 +16,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from metacompskin.alpha_estimation import SmoothingAlphaEstimator
     from metacompskin.animation_generator import AnimationFrameGenerator
     from metacompskin.maya_exporter import MayaBlendshapeExporter
     from metacompskin.maya_pipeline import compress_and_build_rig
@@ -32,6 +33,7 @@ _EXPORTS = {
     "MayaBlendshapeExporter": "metacompskin.maya_exporter",
     "MayaBlendshapeModelData": "metacompskin.model_data",
     "SkinCompressor": "metacompskin.model_fit",  # former name; warns when used
+    "SmoothingAlphaEstimator": "metacompskin.alpha_estimation",  # experimental
     "build_skinned_rig": "metacompskin.maya_rig_builder",
     "compress_and_build_rig": "metacompskin.maya_pipeline",
 }
@@ -42,6 +44,7 @@ __all__ = [
     "CompressedSkinningSolver",
     "MayaBlendshapeExporter",
     "MayaBlendshapeModelData",
+    "SmoothingAlphaEstimator",
     "__version__",
     "build_skinned_rig",
     "compress_and_build_rig",
