@@ -53,7 +53,10 @@ Constructor arguments:
 | `distance_penalty_guard` | 0.2 | With the refit, moving skin the penalty left on the root keeps this share on its nearest joint; 0 turns it off. |
 | `smoothing` | `"residual"` with joint matrices, `"reconstruction"` without | What `alpha` smooths: the error between the result and the target (`"residual"`), which keeps fine detail the target has, or the skinned result itself (`"reconstruction"`, the paper's term). See [Smoothing the error instead of the result](#smoothing-the-error-instead-of-the-result). |
 | `still_vertices` | `"static"` with joint matrices and a root, `"none"` otherwise | Skin to pin to the root and leave out of the solve, which makes the run faster: `"static"` for skin no shape moves, a distance in model units for skin moving less than that, or `"none"` to solve every vertex. Pinning needs the root influence. See [Skin that does not move](#skin-that-does-not-move). |
-| `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. Six coefficients make one $(k, j)$ block. |
+| `total_nnz_B_rt` | 6000 | $L$, non-zero delta coefficients across the whole model. `transform_channels` coefficients (six by default) make one $(k, j)$ block. |
+| `transform_channels` | 6 | Channels of each joint's change in each shape: 6 rotation and translation (the paper's), 9 adds a scale along each axis, 12 also the three symmetric shears. Not with `joint_parents` above 6. See [Joint transforms](#joint-transforms). |
+| `rotation_penalty` | 0 (off) | Penalty on the joints' rotations, relative to the data's motion. See [Joint transforms](#joint-transforms). |
+| `translation_unit` | `"model"` | Unit of the translation channels: the model's, or `"head"` for the head's RMS radius. See [Joint transforms](#joint-transforms). |
 | `power` | 2 | Exponent $p$ of the error norm. |
 | `init_weight` | 1e-3 | Scale of the random initial deltas. Rarely worth touching. |
 | `joint_parents` | `None` | With `rest_joint_matrices`, the parent index of each joint (-1 for none). The motion is then solved through that hierarchy. Optional; see [Joint hierarchy](#joint-hierarchy). |
@@ -329,6 +332,49 @@ locality, and how much of each depends on the joint layout. Small strengths
 already give most of the gain; raise it until the error starts to climb. Off
 by default. Since version 0.5.0 the penalty is taken on shares, so strengths
 chosen for earlier versions do not carry over.
+
+### Joint transforms
+
+Each joint's change in each shape is a $3 \times 4$ matrix built from a few
+channels. By default there are six, as in the paper: a linearised rotation and
+a translation. Three options change that.
+
+- **More channels** (`transform_channels`, `--transform-channels`). `9` adds a
+  scale along each of the model's axes; `12` also adds the three symmetric
+  shears, and together the twelve span every affine change. Joints can then
+  follow skin that stretches or squashes, such as lips and cheeks, which a
+  rotation and a translation fit only roughly. More channels cost more delta
+  coefficients for the same fit, so compare settings at the same budget per
+  channel: $1.5L$ for nine, $2L$ for twelve. A joint hierarchy composes
+  rotations and translations only, so `joint_parents` needs six.
+- **The rotation penalty** (`rotation_penalty`, `--rotation-penalty`). Adds the
+  mean square of the joints' linearised rotations to the loss, times the
+  data's mean squared motion so the same strength works in any scene unit.
+  Without it a joint may spin to fit skin that a translation or a neighbouring
+  joint could fit; with it the joints' motion stays closer to what an animator
+  would key. It combines well with the distance penalty, which also keeps
+  joints local. Off by default.
+- **The translation unit** (`translation_unit`, `--translation-unit`).
+  `"head"` measures the translation channels in the head's RMS radius about
+  its centre instead of the model's unit, so rotations (which have no unit)
+  and translations are on a comparable scale whatever the scene unit.
+
+```python
+compressor = CompressedSkinningSolver(
+    model_data=model_data,
+    rest_joint_matrices=joint_matrices,
+    total_nnz_B_rt=2 * budget,  # twelve channels: twice the six-channel budget
+    transform_channels=12,
+    rotation_penalty=3.0,
+    distance_penalty=0.003,
+    translation_unit="head",
+)
+```
+
+The output keeps its layout whatever the channels: `shapeXform` holds full
+$3 \times 4$ changes, so tools that read it need no change. A Maya joint
+cannot hold shear, so the rig builder places a driver node above each joint
+that carries the full matrix.
 
 ### Smoothing the error instead of the result
 
