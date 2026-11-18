@@ -1,6 +1,6 @@
 # Compressing
 
-`SkinCompressor` takes a `BlendshapeModelData` and writes the compressed file.
+`CompressedSkinningSolver` takes a `BlendshapeModelData` and writes the compressed file.
 This page covers running it, every setting, custom joints, and practical
 advice on getting good results. The theory behind the settings is in
 [How the solver works](../concepts/how_the_solver_works.md).
@@ -8,10 +8,10 @@ advice on getting good results. The theory behind the settings is in
 ## Minimal run
 
 ```python
-from metacompskin import BlendshapeModelData, SkinCompressor
+from metacompskin import BlendshapeModelData, CompressedSkinningSolver
 
 model_data = BlendshapeModelData.from_npz("exports/head.npz")
-compressor = SkinCompressor(model_data=model_data, iterations=10000)
+compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
 compressor.run(output_location="exports/head_compressed.npz")
 ```
 
@@ -69,7 +69,7 @@ Attributes you can change after construction and before `run`:
 | `schedule` | built from `iterations`, `max_influences`, `total_nnz_B_rt` | The `TrainingPhase` objects `run` executes. Reassign for a hand-built schedule (different stage lengths, an annealed $L$, more than one warm-up). |
 
 ```python
-compressor = SkinCompressor(
+compressor = CompressedSkinningSolver(
     model_data=model_data, iterations=15000, number_of_bones=60, total_nnz_B_rt=9000
 )
 compressor.alpha = 20.0
@@ -92,7 +92,7 @@ coefficients, $6 S P$. With 3 shapes and 100 joints that is 1800, so the default
 
 ```python
 budget = min(6000, int(0.8 * 6 * model_data.n_blendshapes * 100))
-compressor = SkinCompressor(model_data=model_data, total_nnz_B_rt=budget)
+compressor = CompressedSkinningSolver(model_data=model_data, total_nnz_B_rt=budget)
 ```
 
 **Runtime budget is tight.** Reduce $P$ before reducing $L$; the number of
@@ -124,7 +124,7 @@ as a sequence instead of an int gives the solver that capacity *during
 training only*, and hands back a result at the same $K$ you shipped with.
 
 ```python
-compressor = SkinCompressor(
+compressor = CompressedSkinningSolver(
     model_data=model_data, iterations=(5000, 5000, 5000, 10000), max_influences=8
 )
 compressor.run("exports/head_annealed.npz")
@@ -152,7 +152,7 @@ to `schedule` directly before calling `run`:
 ```python
 from metacompskin.model_fit import TrainingPhase
 
-compressor = SkinCompressor(model_data=model_data)  # ships K=8, L=6000
+compressor = CompressedSkinningSolver(model_data=model_data)  # ships K=8, L=6000
 compressor.schedule = (
     TrainingPhase(
         iterations=2000,
@@ -186,7 +186,7 @@ import numpy as np
 with open("matrices.json", encoding="utf-8") as f:
     joint_matrices = np.array(json.load(f)).reshape(-1, 4, 4)  # (P, 4, 4)
 
-compressor = SkinCompressor(
+compressor = CompressedSkinningSolver(
     model_data=model_data,
     iterations=10000,
     rest_joint_matrices=joint_matrices,
@@ -256,7 +256,7 @@ more local and cost a little accuracy, so turn it on to try it, not as a
 matter of course.
 
 ```python
-compressor = SkinCompressor(
+compressor = CompressedSkinningSolver(
     model_data=model_data,
     rest_joint_matrices=joint_matrices,
     joint_parents=[-1, 0, 0, 1, ...],  # parent index per joint, -1 for none
@@ -316,7 +316,7 @@ Two parts of the solve go with the penalty by default:
   whole refit. `guarded_vertices` lists that skin after `run()`.
 
 ```python
-compressor = SkinCompressor(
+compressor = CompressedSkinningSolver(
     model_data=model_data,
     rest_joint_matrices=joint_matrices,
     distance_penalty=0.1,
@@ -398,7 +398,7 @@ improve a fit at no runtime cost:
 ```python
 best = None
 for seed in (1, 2, 3, 4, 5):
-    compressor = SkinCompressor(model_data=model_data, seed=seed)
+    compressor = CompressedSkinningSolver(model_data=model_data, seed=seed)
     compressor.run(f"exports/head_seed{seed}.npz")
     if best is None or compressor.reconstruction_error.max_abs < best:
         best = compressor.reconstruction_error.max_abs
@@ -406,14 +406,14 @@ for seed in (1, 2, 3, 4, 5):
 
 ## Batch processing
 
-`SkinCompressor` is a plain Python object; loop over files in a script or a
+`CompressedSkinningSolver` is a plain Python object; loop over files in a script or a
 farm job. It prints to stdout and keeps `loss_list` and `abserr_list` (one
 entry per 200 iterations) for plotting convergence.
 
 ```python
 for npz in sorted(Path("exports").glob("*_head.npz")):
     model_data = BlendshapeModelData.from_npz(npz)
-    SkinCompressor(model_data=model_data).run(
+    CompressedSkinningSolver(model_data=model_data).run(
         npz.with_name(npz.stem + "_compressed.npz")
     )
 ```

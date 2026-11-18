@@ -16,7 +16,7 @@ everywhere, including inside Maya where PyTorch is not installed:
        BlendshapeModelData,
        MayaBlendshapeExporter,
        MayaBlendshapeModelData,
-       SkinCompressor,
+       CompressedSkinningSolver,
        build_skinned_rig,
        compress_and_build_rig,
    )

@@ -27,8 +27,8 @@ by you (see [Preparing data](../user_guide/preparing_data.md)).
 | `inbetween_info` | 0-d object | dict | yes (may be `{}`) | Rig-logic metadata for in-between shapes. Only meaningful for the sample rigs; write an empty dict for your own data. |
 | `combination_info` | 0-d object | dict | yes (may be `{}`) | Rig-logic metadata for corrective shapes. Same remark. |
 | `shape_names` | `(S,)` | str | no | Target names, aligned with the first axis of `deltas`. Written by the exporter; not read by the compressor but essential downstream. |
-| `rest_joint_matrices` | `(P, 4, 4)` | float64 | no | World-space rest matrices of real joints, translation in the last column. Written by the exporter when `joints` is given. Pass to `SkinCompressor(rest_joint_matrices=...)`. |
-| `joint_parents` | `(P,)` | int64 | no | For each joint in `rest_joint_matrices`, the index of its parent, or -1 for none. Written by the exporter when `joints` is given (the nearest exported ancestor in the Maya hierarchy). Pass to `SkinCompressor(joint_parents=...)`; the command line uses it automatically. |
+| `rest_joint_matrices` | `(P, 4, 4)` | float64 | no | World-space rest matrices of real joints, translation in the last column. Written by the exporter when `joints` is given. Pass to `CompressedSkinningSolver(rest_joint_matrices=...)`. |
+| `joint_parents` | `(P,)` | int64 | no | For each joint in `rest_joint_matrices`, the index of its parent, or -1 for none. Written by the exporter when `joints` is given (the nearest exported ancestor in the Maya hierarchy). Pass to `CompressedSkinningSolver(joint_parents=...)`; the command line uses it automatically. |
 
 Loading validates that the shapes agree ($N$ consistent across the three
 arrays, faces homogeneous, indices in range) and raises `ValueError` with a
@@ -55,7 +55,7 @@ np.savez(
 
 ## Output: compressed skinning
 
-Written by `SkinCompressor.run`. Read by `AnimationFrameGenerator`, by rig
+Written by `CompressedSkinningSolver.run`. Read by `AnimationFrameGenerator`, by rig
 builders, and by engine importers.
 
 | Key | Shape | dtype | Content |
@@ -127,7 +127,7 @@ with open("matrices.json", encoding="utf-8") as f:
     joint_matrices = np.array(json.load(f)).reshape(-1, 4, 4)
 ```
 
-`SkinCompressor` uses only the first three rows of each matrix and only echoes
+`CompressedSkinningSolver` uses only the first three rows of each matrix and only echoes
 them into `restXform`; they do not influence the solve. What they do set is
 $P$, the number of joints, which becomes the number of matrices.
 

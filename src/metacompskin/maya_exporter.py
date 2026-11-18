@@ -33,10 +33,12 @@ Example:
     Then outside Maya::
 
         from metacompskin.model_data import BlendshapeModelData
-        from metacompskin.model_fit import SkinCompressor
+        from metacompskin.model_fit import CompressedSkinningSolver
 
         model_data = BlendshapeModelData.from_npz("D:/exports/head.npz")
-        SkinCompressor(model_data=model_data).run("D:/exports/head_compressed.npz")
+        CompressedSkinningSolver(model_data=model_data).run(
+            "D:/exports/head_compressed.npz"
+        )
 """
 
 from collections.abc import Callable, Sequence
@@ -104,12 +106,12 @@ class MayaBlendshapeExporter:
 
     - ``shape_names``: target names, aligned with the first axis of ``deltas``.
     - ``rest_joint_matrices``: world-space 4x4 joint matrices (only when
-      ``joints`` is provided). Suitable for ``SkinCompressor``'s
+      ``joints`` is provided). Suitable for ``CompressedSkinningSolver``'s
       ``rest_joint_matrices`` argument; translation is stored in the last
       column (the matrices are transposed from Maya's row-vector convention).
     - ``joint_parents``: for each exported joint, the index of its nearest
       ancestor among the exported joints, or -1 (only when ``joints`` is
-      provided). Suitable for ``SkinCompressor``'s ``joint_parents`` argument.
+      provided). Suitable for ``CompressedSkinningSolver``'s ``joint_parents`` argument.
 
     Points are read in object space, so targets that have been translated
     aside for layout in the scene still produce correct deltas.
@@ -454,7 +456,7 @@ class MayaBlendshapeExporter:
 
         Maya's ``xform -matrix`` uses the row-vector convention (translation
         in the last row); the matrices are transposed so translation sits in
-        the last column, matching ``SkinCompressor``'s expectation of standard
+        the last column, matching ``CompressedSkinningSolver``'s expectation of standard
         homogeneous transforms.
 
         Args:

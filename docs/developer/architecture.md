@@ -9,7 +9,7 @@ between them, and the design decisions that are not obvious from the code.
 src/metacompskin/
 ├── __init__.py            version + lazy re-exports of the public classes
 ├── model_data.py          BlendshapeModelData, MayaBlendshapeModelData   (input)
-├── model_fit.py           SkinCompressor                                  (solver)
+├── model_fit.py           CompressedSkinningSolver                                  (solver)
 ├── animation_generator.py AnimationFrameGenerator                         (reference runtime)
 ├── maya_exporter.py       MayaBlendshapeExporter        (runs inside Maya, numpy only)
 ├── maya_loader.py         load_obj_with_maya            (OBJ via Maya, direct or subprocess)
@@ -37,7 +37,7 @@ src/metacompskin/
                                           │
                               BlendshapeModelData.from_npz     validate shapes, pick alpha
                                           │
-                                   SkinCompressor.run          A = deltas as (3S, N)
+                                   CompressedSkinningSolver.run          A = deltas as (3S, N)
                                           │                    L = mesh Laplacian
                                           │                    phase 1: train(normalizeW=False)
                                           │                    phase 2: train(normalizeW=True)
@@ -77,7 +77,7 @@ validated in `from_npz` (and by the exporter, which reuses the same validator
 before writing). Direct construction skips validation on purpose so tests can
 build small synthetic models.
 
-**Solver state lives on the instance.** `SkinCompressor` keeps settings as
+**Solver state lives on the instance.** `CompressedSkinningSolver` keeps settings as
 plain attributes set in `__init__` so callers can override them between
 construction and `run`. `run` builds all tensors, trains twice, evaluates and
 saves; `train` is the inner loop and is re-entrant on the same tensors.

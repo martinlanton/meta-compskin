@@ -1,4 +1,4 @@
-"""Implements the SkinCompressor class for blendshape compression and optimization.
+"""Implements the CompressedSkinningSolver class for blendshape compression and optimization.
 
 Handles loading model data, running optimization, and saving results.
 """
@@ -10,6 +10,7 @@ Handles loading model data, running optimization, and saving results.
 # the root directory of this source tree.
 
 import time
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import combinations
@@ -206,7 +207,7 @@ def distance_weights(
     joint always gets the largest weight, so a joint's support is the region
     around it; a higher power concentrates more of the weight on it. These are
     the starting weights of a solve with joint matrices (see
-    :class:`SkinCompressor`), not a finished bind.
+    :class:`CompressedSkinningSolver`), not a finished bind.
 
     Args:
         distances: Joint-to-vertex distances, shape (P, N), for example from
@@ -427,7 +428,7 @@ class TrainingPhase:
 
     iterations: int
     max_influences: int
-    total_nnz_B_rt: int  # noqa: N815 (matches SkinCompressor)
+    total_nnz_B_rt: int  # noqa: N815 (matches CompressedSkinningSolver)
     normalize_weights: bool
 
     def __post_init__(self) -> None:
@@ -462,7 +463,7 @@ class ReconstructionError:
 def build_training_schedule(
     stage_iterations: Sequence[int],
     max_influences: int,
-    total_nnz_B_rt: int,  # noqa: N803 (matches SkinCompressor)
+    total_nnz_B_rt: int,  # noqa: N803 (matches CompressedSkinningSolver)
     start_influences: int | None = None,
     warm_up_enabled: bool = True,
 ) -> tuple[TrainingPhase, ...]:
@@ -798,7 +799,7 @@ def _as_stage_iterations(iterations: int | Sequence[int]) -> tuple[int, ...]:
     return stages
 
 
-class SkinCompressor:
+class CompressedSkinningSolver:
     """Optimizer for sparse skinning decomposition of facial blendshapes.
 
     This class implements the compressed skinning decomposition method from
@@ -880,7 +881,7 @@ class SkinCompressor:
     Example:
         >>> from metacompskin.model_data import BlendshapeModelData
         >>> model_data = BlendshapeModelData.from_npz("data/source_models/aura.npz")
-        >>> compressor = SkinCompressor(model_data=model_data, iterations=10000)
+        >>> compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
         >>> compressor.run(output_location="output/aura_compressed.npz")
         Model: aura
           deltas: (230, 7306, 3) float32
@@ -921,7 +922,7 @@ class SkinCompressor:
         distance_penalty_refit: bool = True,
         distance_penalty_guard: float = _DEFAULT_PENALTY_GUARD,
     ):
-        """Initializes the SkinCompressor.
+        """Initializes the CompressedSkinningSolver.
 
         Args:
             model_data: BlendshapeModelData instance containing model geometry and rig info.
@@ -1041,19 +1042,19 @@ class SkinCompressor:
             >>> from metacompskin.model_data import BlendshapeModelData
             >>> model_data = BlendshapeModelData.from_npz("data/source_models/aura.npz")
             >>> # Default behavior with identity matrices
-            >>> compressor = SkinCompressor(model_data=model_data, iterations=10000)
+            >>> compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
             >>> compressor.run()
             >>>
             >>> # With custom joint matrices
             >>> import numpy as np
             >>> joint_matrices = np.array([np.eye(4) for _ in range(28)])
-            >>> compressor = SkinCompressor(
+            >>> compressor = CompressedSkinningSolver(
             ...     model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
             ... )
             >>> compressor.run()
             >>>
             >>> # Anneal the influence budget over three stages
-            >>> compressor = SkinCompressor(
+            >>> compressor = CompressedSkinningSolver(
             ...     model_data=model_data, iterations=(5000, 5000, 10000)
             ... )
             >>>
@@ -1238,7 +1239,7 @@ class SkinCompressor:
             These match Table 1 in the paper for comparison with Dem Bones.
 
         Example:
-            >>> compressor = SkinCompressor(model_data, iterations=10000)
+            >>> compressor = CompressedSkinningSolver(model_data, iterations=10000)
             >>> compressor.run("output/aura_compressed.npz")
             Model: aura
               deltas: (230, 7306, 3) float32
@@ -2453,3 +2454,22 @@ class SkinCompressor:
                                [0, 0, 0, 1]]], dtype=torch.float32).to(self.device)
         return ebase.reshape(6, 1, 1, 3, 4)
         # fmt: on
+
+
+_DEPRECATED_NAMES = {"SkinCompressor": "CompressedSkinningSolver"}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve deprecated names to their replacements, with a warning (PEP 562).
+
+    ``SkinCompressor`` is the solver's former name; it still works but warns.
+    """
+    if name in _DEPRECATED_NAMES:
+        new_name = _DEPRECATED_NAMES[name]
+        warnings.warn(
+            f"{name} is deprecated; use {new_name} instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new_name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

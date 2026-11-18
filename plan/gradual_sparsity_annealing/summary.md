@@ -35,7 +35,7 @@ ran on is not here.
 
 Three additions, defaults bit-identical to before:
 
-1. **Seed.** `SkinCompressor(seed=12345)`, `--seed`, the Maya pipeline
+1. **Seed.** `CompressedSkinningSolver(seed=12345)`, `--seed`, the Maya pipeline
    settings, and `reconstruction_error` (MXE and MAE kept on the object).
 2. **Annealing.** `iterations` may be a sequence, one entry per stage. Stage i
    keeps `K * 2**(N-1-i)` influences, for example 64, 32, 16, 8 for K=8 and

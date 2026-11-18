@@ -15,7 +15,7 @@ import pytest
 
 from metacompskin.maya_rig_builder import default_shape_names
 from metacompskin.model_data import BlendshapeModelData
-from metacompskin.model_fit import SkinCompressor
+from metacompskin.model_fit import CompressedSkinningSolver
 
 GRID = 5  # 5x5 vertices -> 16 quad faces
 N_SHAPES = 3
@@ -64,7 +64,7 @@ def compressed_model(tmp_path_factory):
     # B_rt only has 6*S*P elements on this tiny model; the default sparsity
     # budget (6000) exceeds that, which torch.topk rejects.
     max_nnz = int(6 * model_data.n_blendshapes * N_BONES * 0.8)
-    compressor = SkinCompressor(
+    compressor = CompressedSkinningSolver(
         model_data=model_data,
         iterations=ITERATIONS,
         number_of_bones=N_BONES,

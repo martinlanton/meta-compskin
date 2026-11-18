@@ -90,7 +90,7 @@ quick look at that commit's diff would settle both.
 
 `_resolve_root_joint`, `_ROOT_WEIGHT_FLOOR`, `_project_weights`,
 `_project_transforms`, `_report_root_usage`, weight validation, the CLI and
-Maya pipeline options, and `TestRootJoint` in `tests/test_skin_compressor.py`
+Maya pipeline options, and `TestRootJoint` in `tests/test_compressed_skinning_solver.py`
 are all in place. The user guide and the solver-concepts page document the
 option.
 

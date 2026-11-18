@@ -1,6 +1,6 @@
-"""Example: Using SkinCompressor with custom joint matrices.
+"""Example: Using CompressedSkinningSolver with custom joint matrices.
 
-This example demonstrates how to use the SkinCompressor with custom
+This example demonstrates how to use the CompressedSkinningSolver with custom
 rest joint matrices, allowing compression to work with specific facial
 rigs instead of generating joints at the center of the world.
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from metacompskin.model_data import BlendshapeModelData
-from metacompskin.model_fit import SkinCompressor
+from metacompskin.model_fit import CompressedSkinningSolver
 
 
 def example_with_custom_joints():
@@ -32,7 +32,7 @@ def example_with_custom_joints():
     # Create compressor with custom joint matrices
     # The number of bones will be automatically set to match
     # the number of matrices provided
-    compressor = SkinCompressor(
+    compressor = CompressedSkinningSolver(
         model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
     )
 
@@ -72,7 +72,7 @@ def example_with_generated_joints():
     # only drives the vertices nearest to it along the mesh (its candidate
     # set, 2*K joints per vertex by default); pass
     # candidate_joints_per_vertex=0 to solve without that filter.
-    compressor = SkinCompressor(
+    compressor = CompressedSkinningSolver(
         model_data=model_data, iterations=10000, rest_joint_matrices=joint_matrices
     )
 
@@ -87,7 +87,7 @@ def example_default_behavior():
     # the compressor uses the default behavior:
     # - 100 bones
     # - Identity matrices at the origin
-    compressor = SkinCompressor(
+    compressor = CompressedSkinningSolver(
         model_data=model_data,
         iterations=10000,
         # rest_joint_matrices=None  # This is the default
@@ -99,9 +99,9 @@ def example_default_behavior():
 
 
 if __name__ == "__main__":
-    print("Example: SkinCompressor with custom joint matrices")
+    print("Example: CompressedSkinningSolver with custom joint matrices")
     print("=" * 60)
-    print("\nThis example demonstrates three ways to use SkinCompressor:")
+    print("\nThis example demonstrates three ways to use CompressedSkinningSolver:")
     print("1. With joint matrices loaded from a JSON file")
     print("2. With programmatically generated joint matrices")
     print("3. With default behavior (no custom matrices)")

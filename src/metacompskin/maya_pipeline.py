@@ -83,7 +83,7 @@ class CompressionSettings:
     Used by :func:`compression_command` and :func:`run_compression`;
     :func:`compress_and_build_rig` takes the same values as plain arguments.
     Fields left at None are not passed, so the compressor's own defaults apply
-    (see :class:`SkinCompressor`).
+    (see :class:`CompressedSkinningSolver`).
 
     Attributes:
         iterations: Optimisation iterations per phase (an int), or steps per
@@ -124,7 +124,7 @@ class CompressionSettings:
     iterations: int | tuple[int, ...] = 10000
     number_of_bones: int | None = None
     max_influences: int | None = None
-    total_nnz_B_rt: int | None = None  # noqa: N815 (matches SkinCompressor)
+    total_nnz_B_rt: int | None = None  # noqa: N815 (matches CompressedSkinningSolver)
     init_weight: float | None = None
     power: int | None = None
     alpha: float | None = None
@@ -189,7 +189,7 @@ def compress_and_build_rig(  # noqa: PLR0913, PLR0917
     the duplicate is taken in the neutral pose.
 
     Compressor settings left at None take the compressor's own defaults (see
-    :class:`SkinCompressor`).
+    :class:`CompressedSkinningSolver`).
 
     Args:
         python_executable: Interpreter with PyTorch for the compression. Falls

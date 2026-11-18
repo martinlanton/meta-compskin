@@ -1,6 +1,6 @@
 # How the solver works
 
-`SkinCompressor` finds the skin weights and the per-shape joint deltas at the
+`CompressedSkinningSolver` finds the skin weights and the per-shape joint deltas at the
 same time, starting from random values. This page explains the optimisation so
 that the settings in [Compressing](../user_guide/compressing.md) make sense, and
 so that you can read the progress log. It follows Section 4 of the paper.
@@ -30,7 +30,7 @@ penalises reconstructions where a vertex moves very differently from its
 neighbours, which discourages the solver from explaining a shape with jagged
 weight maps. This is the same regularisation used by Dem Bones.
 
-In code (`SkinCompressor.train`):
+In code (`CompressedSkinningSolver.train`):
 
 ```python
 loss = (B_X - A).pow(power).mean().pow(2 / power)  # data term, p = power

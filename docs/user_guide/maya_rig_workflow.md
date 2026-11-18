@@ -447,7 +447,7 @@ they matter to a rigger:
 | `return_to_neutral` | `False` | Key the neutral pose after every shape, so the animation goes neutral, shape, neutral, next shape (section 4.1). |
 | `interpolation` | `step` | Tangents of the rig's joint keys: `step` holds each pose, `spline` (or another Maya tangent type) blends between them (section 4.1). |
 
-The compressor settings are the same as those of `SkinCompressor` itself
+The compressor settings are the same as those of `CompressedSkinningSolver` itself
 ([Compressing](compressing.md#settings)). Leaving one out means the compressor's
 own default is used.
 

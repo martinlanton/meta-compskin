@@ -1,6 +1,6 @@
 r"""Command-line compression entry point.
 
-Runs :class:`SkinCompressor` on a model file written by
+Runs :class:`CompressedSkinningSolver` on a model file written by
 :class:`MayaBlendshapeExporter` (or any file :meth:`BlendshapeModelData.from_npz`
 accepts) and writes the compressed archive. This is what the Maya pipeline
 launches in a subprocess, but it works on its own too::
@@ -40,7 +40,7 @@ import numpy as np
 import torch
 
 from metacompskin.model_data import BlendshapeModelData
-from metacompskin.model_fit import SkinCompressor
+from metacompskin.model_fit import CompressedSkinningSolver
 
 
 def _int_list(text: str) -> tuple[int, ...]:
@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> Path:
                 settings["deltas_about_joints"] = True
 
     print(f"Compressing on {'cuda' if torch.cuda.is_available() else 'cpu'}")
-    compressor = SkinCompressor(model_data=model_data, **settings)
+    compressor = CompressedSkinningSolver(model_data=model_data, **settings)
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +262,7 @@ def main(argv: list[str] | None = None) -> Path:
 
 
 def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
-    """Collects the SkinCompressor keyword arguments that were given.
+    """Collects the CompressedSkinningSolver keyword arguments that were given.
 
     Args:
         args: Parsed command-line arguments.

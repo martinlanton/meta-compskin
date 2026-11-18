@@ -1,6 +1,6 @@
 r"""Compares plain compression against annealed influence-budget schedules.
 
-Runs four variants of `SkinCompressor` — the plain two-phase baseline, a
+Runs four variants of `CompressedSkinningSolver` — the plain two-phase baseline, a
 phase-count control at the same K/L throughout, and two annealed schedules
 (weights only, and weights plus deltas) — over several seeds, all at the
 same *total* step count, and reports mean/std/min/max of the final MXE and
@@ -40,7 +40,7 @@ import torch
 from metacompskin.cli import _stored_joint_matrices
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
-    SkinCompressor,
+    CompressedSkinningSolver,
     TrainingPhase,
     build_training_schedule,
 )
@@ -161,7 +161,7 @@ def iterations_per_phase(total_iterations: int, phases: int) -> int:
 def build_variants(
     total_iterations: int,
     max_influences: int,
-    total_nnz_B_rt: int,  # noqa: N803 (matches SkinCompressor)
+    total_nnz_B_rt: int,  # noqa: N803 (matches CompressedSkinningSolver)
     n_coefficients: int,
     anneal_stages: int,
 ) -> list[Variant]:
@@ -324,7 +324,7 @@ def run_variant(
         model_data: The loaded model to compress.
         variant: Which schedule to run.
         seed: Random seed for this run.
-        settings: Extra SkinCompressor keyword arguments (number_of_bones,
+        settings: Extra CompressedSkinningSolver keyword arguments (number_of_bones,
             max_influences, total_nnz_B_rt, init_weight, power, and
             optionally rest_joint_matrices). iterations is not included:
             variant.schedule replaces whatever schedule the constructor
@@ -334,7 +334,7 @@ def run_variant(
     Returns:
         The run's settings and final reconstruction error.
     """
-    compressor = SkinCompressor(model_data=model_data, seed=seed, **settings)
+    compressor = CompressedSkinningSolver(model_data=model_data, seed=seed, **settings)
     compressor.schedule = variant.schedule
 
     start = time.perf_counter()

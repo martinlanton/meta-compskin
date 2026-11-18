@@ -166,7 +166,7 @@ to rotation plus translation, throws away part of the fit.
 
 In the code the six coefficients per (shape, joint) live in `B_rt`, shape
 `(6, S, P, 1, 1)`, and the six fixed basis matrices in `TR`, built by
-`SkinCompressor.buildTR`. Their product, summed over the six, is $\mathbf{B}$.
+`CompressedSkinningSolver.buildTR`. Their product, summed over the six, is $\mathbf{B}$.
 
 ## Composition with the head
 

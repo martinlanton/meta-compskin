@@ -16,7 +16,7 @@ graph TB
 
     subgraph "Main Components"
         DATA[📊 BlendshapeModelData<br/>Loads & validates data]
-        COMPRESS[🔧 SkinCompressor<br/>Learns compact representation]
+        COMPRESS[🔧 CompressedSkinningSolver<br/>Learns compact representation]
         ANIMATE[🎬 AnimationFrameGenerator<br/>Generates animation]
     end
 
@@ -65,7 +65,7 @@ classDiagram
         -_validate_arrays(...) void$
     }
     
-    class SkinCompressor {
+    class CompressedSkinningSolver {
         +BlendshapeModelData model_data
         +int iterations
         +int number_of_bones
@@ -114,9 +114,9 @@ classDiagram
         +get_alpha_for_model(name) float$
     }
     
-    SkinCompressor --> BlendshapeModelData : uses
-    SkinCompressor --> Utils : uses
-    SkinCompressor --> Constants : uses
+    CompressedSkinningSolver --> BlendshapeModelData : uses
+    CompressedSkinningSolver --> Utils : uses
+    CompressedSkinningSolver --> Constants : uses
     AnimationFrameGenerator --> BlendshapeModelData : uses
     AnimationFrameGenerator --> Utils : uses
     BlendshapeModelData --> Constants : uses
@@ -131,7 +131,7 @@ flowchart TD
     START([Start]) --> LOAD[Load NPZ File]
     LOAD --> VALIDATE[Validate Arrays<br/>BlendshapeModelData]
     
-    VALIDATE --> INIT[Initialize SkinCompressor<br/>Set parameters:<br/>P=40 bones<br/>K=8 influences<br/>L=6000 non-zeros]
+    VALIDATE --> INIT[Initialize CompressedSkinningSolver<br/>Set parameters:<br/>P=40 bones<br/>K=8 influences<br/>L=6000 non-zeros]
     
     INIT --> GET_A[Get Matrix A<br/>Reshape deltas<br/>3S × N]
     GET_A --> GET_L[Compute Laplacian<br/>Regularization Matrix]
@@ -336,7 +336,7 @@ graph TD
 sequenceDiagram
     participant User
     participant BlendshapeModelData
-    participant SkinCompressor
+    participant CompressedSkinningSolver
     participant Adam as Adam Optimizer
     participant AnimationFrameGenerator
     participant Output
@@ -346,38 +346,38 @@ sequenceDiagram
     BlendshapeModelData->>BlendshapeModelData: extract model_name, alpha
     BlendshapeModelData-->>User: model_data
     
-    User->>SkinCompressor: __init__(model_data, iterations=10k)
-    SkinCompressor->>SkinCompressor: initialize parameters
-    SkinCompressor->>SkinCompressor: set device (cuda/cpu)
-    SkinCompressor-->>User: compressor
+    User->>CompressedSkinningSolver: __init__(model_data, iterations=10k)
+    CompressedSkinningSolver->>CompressedSkinningSolver: initialize parameters
+    CompressedSkinningSolver->>CompressedSkinningSolver: set device (cuda/cpu)
+    CompressedSkinningSolver-->>User: compressor
     
-    User->>SkinCompressor: run("output.npz")
+    User->>CompressedSkinningSolver: run("output.npz")
     
-    SkinCompressor->>SkinCompressor: get_matrix_for_optimization()
-    SkinCompressor->>SkinCompressor: get_laplacian_regularization()
-    SkinCompressor->>SkinCompressor: buildTR()
-    SkinCompressor->>SkinCompressor: initialize B_rt, W
+    CompressedSkinningSolver->>CompressedSkinningSolver: get_matrix_for_optimization()
+    CompressedSkinningSolver->>CompressedSkinningSolver: get_laplacian_regularization()
+    CompressedSkinningSolver->>CompressedSkinningSolver: buildTR()
+    CompressedSkinningSolver->>CompressedSkinningSolver: initialize B_rt, W
     
     loop Phase 1: normalizeW=False (10k iterations)
-        SkinCompressor->>SkinCompressor: compBX()
-        SkinCompressor->>SkinCompressor: compute loss
-        SkinCompressor->>Adam: backward() + step()
-        Adam-->>SkinCompressor: updated params
-        SkinCompressor->>SkinCompressor: proximal projection
+        CompressedSkinningSolver->>CompressedSkinningSolver: compBX()
+        CompressedSkinningSolver->>CompressedSkinningSolver: compute loss
+        CompressedSkinningSolver->>Adam: backward() + step()
+        Adam-->>CompressedSkinningSolver: updated params
+        CompressedSkinningSolver->>CompressedSkinningSolver: proximal projection
     end
     
     loop Phase 2: normalizeW=True (10k iterations)
-        SkinCompressor->>SkinCompressor: compBX()
-        SkinCompressor->>SkinCompressor: compute loss
-        SkinCompressor->>Adam: backward() + step()
-        Adam-->>SkinCompressor: updated params
-        SkinCompressor->>SkinCompressor: proximal projection
+        CompressedSkinningSolver->>CompressedSkinningSolver: compBX()
+        CompressedSkinningSolver->>CompressedSkinningSolver: compute loss
+        CompressedSkinningSolver->>Adam: backward() + step()
+        Adam-->>CompressedSkinningSolver: updated params
+        CompressedSkinningSolver->>CompressedSkinningSolver: proximal projection
     end
     
-    SkinCompressor->>SkinCompressor: normalize weights
-    SkinCompressor->>SkinCompressor: evaluate errors
-    SkinCompressor->>Output: save NPZ (weights, shapeXform)
-    SkinCompressor-->>User: done
+    CompressedSkinningSolver->>CompressedSkinningSolver: normalize weights
+    CompressedSkinningSolver->>CompressedSkinningSolver: evaluate errors
+    CompressedSkinningSolver->>Output: save NPZ (weights, shapeXform)
+    CompressedSkinningSolver-->>User: done
     
     User->>AnimationFrameGenerator: __init__(compressed.npz, model_data)
     AnimationFrameGenerator->>AnimationFrameGenerator: load compressed data
@@ -401,7 +401,7 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Initialized: SkinCompressor.__init__()
+    [*] --> Initialized: CompressedSkinningSolver.__init__()
     
     Initialized --> Phase1: run() called
     
@@ -453,7 +453,7 @@ stateDiagram-v2
 graph TB
     subgraph "Offline Pre-processing (Hours)"
         INPUT_NPZ[Input NPZ<br/>Blendshapes<br/>S shapes, N vertices]
-        COMPRESS[SkinCompressor<br/>Optimization<br/>20k iterations]
+        COMPRESS[CompressedSkinningSolver<br/>Optimization<br/>20k iterations]
         OUTPUT_NPZ[Output NPZ<br/>Compressed<br/>~90% sparse]
         
         INPUT_NPZ --> COMPRESS

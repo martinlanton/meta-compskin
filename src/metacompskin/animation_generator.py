@@ -1,7 +1,7 @@
 """Generates animation frames from compressed skinning data.
 
 This module provides functionality to generate animation frames using the output
-from the SkinCompressor class along with blendshape model data.
+from the CompressedSkinningSolver class along with blendshape model data.
 """
 
 # Copyright (c) Meta Platforms, Inc. and affiliates.
@@ -38,7 +38,7 @@ def _write_obj(path: str, vertices: np.ndarray, faces: np.ndarray) -> None:
 class AnimationFrameGenerator:
     """Generates animation frames from compressed skinning data and animation weights.
 
-    This class takes the output NPZ file from SkinCompressor and generates
+    This class takes the output NPZ file from CompressedSkinningSolver and generates
     animation frames by applying rig logic and skinning transformations.
     """
 
@@ -50,7 +50,7 @@ class AnimationFrameGenerator:
         """Initializes the AnimationFrameGenerator.
 
         Args:
-            compressed_data_path: Path to the NPZ file output from SkinCompressor.
+            compressed_data_path: Path to the NPZ file output from CompressedSkinningSolver.
                 Expected to contain: rest, quads, weights, restXform, shapeXform.
             model_data: BlendshapeModelData instance containing rig information
                 (inbetween_info and combination_info).

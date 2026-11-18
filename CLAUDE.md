@@ -36,7 +36,7 @@ cd docs && make html
 **`model_data.py` — `BlendshapeModelData`**
 Frozen dataclass. Loads `.npz` files containing blendshape deltas, rest vertices/faces, and rig logic metadata. Validates all array shapes on construction. The `alpha` regularization parameter is model-specific (see `constants.py`).
 
-**`model_fit.py` — `SkinCompressor`**
+**`model_fit.py` — `CompressedSkinningSolver`**
 The optimization engine. Decomposes the blendshape delta matrix **A** (shape `3S×N`, where S=blendshapes, N=vertices) into **B·C**:
 - **B** (`3S×4P`): sparse transformation matrices (~90% zeros), P=100 bones by default
 - **C** (`4P×N`): sparse LBS weights (K≈8 non-zero influences per vertex)
@@ -57,7 +57,7 @@ Loads blendshape data directly from Maya rig files.
 ```
 Input .npz (blendshapes)
   → BlendshapeModelData   (load + validate)
-  → SkinCompressor        (optimize, ~20k iterations)
+  → CompressedSkinningSolver        (optimize, ~20k iterations)
   → Output .npz           (compressed weights B, C + metadata)
   → AnimationFrameGenerator (runtime frame synthesis)
   → OBJ files             (animation sequence)
@@ -128,7 +128,7 @@ API docs use `sphinxcontrib-napoleon` (Google-style docstrings), `sphinx-rtd-the
 
 ### Naming
 - Intention-revealing, pronounceable, searchable names
-- Nouns for classes (`SkinCompressor`), verbs for methods (`compute_skinning_weights`)
+- Nouns for classes (`CompressedSkinningSolver`), verbs for methods (`compute_skinning_weights`)
 - No single-letter names except loop variables in short methods; no noise words (`data` vs `info`)
 
 ### Functions

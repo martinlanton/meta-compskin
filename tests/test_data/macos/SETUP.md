@@ -27,7 +27,7 @@ Tests using this data are skipped automatically on other platforms.
 |----------|-------|
 | CUDA | Not available (CPU-only) |
 | Device | CPU |
-| Random seed | 12345 (default of the `seed` argument of `SkinCompressor`) |
+| Random seed | 12345 (default of the `seed` argument of `CompressedSkinningSolver`) |
 
 ## Files
 

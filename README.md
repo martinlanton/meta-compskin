@@ -47,10 +47,10 @@ Details and platform paths: [Installation](docs/getting_started/installation.md)
 ## Usage in three lines
 
 ```python
-from metacompskin import BlendshapeModelData, SkinCompressor
+from metacompskin import BlendshapeModelData, CompressedSkinningSolver
 
 model_data = BlendshapeModelData.from_npz("exports/head.npz")
-SkinCompressor(model_data=model_data, iterations=10000).run(
+CompressedSkinningSolver(model_data=model_data, iterations=10000).run(
     "exports/head_compressed.npz"
 )
 ```
@@ -73,7 +73,7 @@ Complete scripts are in [`examples/`](examples/).
 ```
 src/metacompskin/
 ├── model_data.py            BlendshapeModelData, MayaBlendshapeModelData   (input)
-├── model_fit.py             SkinCompressor                                  (solver)
+├── model_fit.py             CompressedSkinningSolver                                  (solver)
 ├── animation_generator.py   AnimationFrameGenerator                         (reference runtime)
 ├── maya_exporter.py         MayaBlendshapeExporter        (runs inside Maya, numpy only)
 ├── maya_rig_builder.py      build_skinned_rig             (runs inside Maya, numpy only)

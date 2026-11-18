@@ -11,7 +11,7 @@ import numpy as np
 
 from metacompskin.animation_generator import AnimationFrameGenerator
 
-_MAX_INFLUENCES = 8  # K, mirrors SkinCompressor.max_influences
+_MAX_INFLUENCES = 8  # K, mirrors CompressedSkinningSolver.max_influences
 
 
 def test_output_contains_all_arrays_with_expected_shapes(compressed_model):

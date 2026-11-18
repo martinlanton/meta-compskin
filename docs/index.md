@@ -9,7 +9,7 @@ skinning decompositions. It is the reference implementation of the SIGGRAPH
 Research ([arXiv 2406.11597](https://arxiv.org/abs/2406.11597)).
 
 ```
-blendshape targets  ──►  SkinCompressor  ──►  skin weights + per-shape joint motion
+blendshape targets  ──►  CompressedSkinningSolver  ──►  skin weights + per-shape joint motion
    (S × N offsets)        (offline, GPU)          (small, sparse, engine-ready)
 ```
 

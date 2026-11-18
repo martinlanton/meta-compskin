@@ -13,7 +13,7 @@ from metacompskin.cli import main
 from metacompskin.maya_pipeline import CompressionSettings, compression_command
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
-    SkinCompressor,
+    CompressedSkinningSolver,
     distance_penalty_per_vertex,
     distance_penalty_weights,
     distance_weights,
@@ -65,7 +65,7 @@ def _nearest_share(weights: np.ndarray, model: BlendshapeModelData) -> float:
 
 def _run(tmp_path, name, model=None, **settings) -> np.ndarray:
     output = tmp_path / f"{name}.npz"
-    SkinCompressor(
+    CompressedSkinningSolver(
         model_data=model or make_grid_model(),
         rest_joint_matrices=_grid_joints(),
         **{**_FAST, **settings},
@@ -115,13 +115,13 @@ class TestDistancePenaltyWeights:
 class TestDistancePenaltySetting:
     def test_needs_joint_matrices(self, grid_model_data):
         with pytest.raises(ValueError, match="rest_joint_matrices"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data, number_of_bones=10, distance_penalty=0.1
             )
 
     def test_must_not_be_negative(self, grid_model_data):
         with pytest.raises(ValueError, match="distance_penalty"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 distance_penalty=-1.0,
@@ -187,7 +187,7 @@ class TestJointSharePenalty:
         torch.testing.assert_close(per_vertex, (weights * self.rho).sum(dim=0))
 
 
-class _StrandsSkinBeforeTheLastPhase(SkinCompressor):
+class _StrandsSkinBeforeTheLastPhase(CompressedSkinningSolver):
     """Leaves chosen vertices fully on the root when the penalty's phases end.
 
     Also records which weights were in use at that point, the support the refit
@@ -234,7 +234,7 @@ class TestDistancePenaltyRefit:
         assert not (weights.T[~allowed] > 0).any()
 
     def test_needs_a_phase_after_the_penalty(self, tmp_path, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_grid_joints(),
             distance_penalty=0.1,
@@ -261,7 +261,7 @@ class TestDistancePenaltyGuard:
     @pytest.mark.parametrize("guard", [-0.1, 1.0])
     def test_must_be_a_share_below_one(self, grid_model_data, guard):
         with pytest.raises(ValueError, match="distance_penalty_guard"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 distance_penalty=0.1,
@@ -283,7 +283,7 @@ class TestDistancePenaltyGuard:
 class TestSmoothing:
     def test_unknown_values_are_rejected(self, grid_model_data):
         with pytest.raises(ValueError, match="smoothing"):
-            SkinCompressor(model_data=grid_model_data, smoothing="weights")
+            CompressedSkinningSolver(model_data=grid_model_data, smoothing="weights")
 
     def test_residual_is_the_default_with_joint_matrices(self, tmp_path):
         np.testing.assert_array_equal(
@@ -294,7 +294,9 @@ class TestSmoothing:
     def test_reconstruction_is_the_default_without_joint_matrices(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(model_data=grid_model_data, number_of_bones=10)
+        compressor = CompressedSkinningSolver(
+            model_data=grid_model_data, number_of_bones=10
+        )
 
         assert compressor.smoothing == "reconstruction"
 
@@ -317,7 +319,7 @@ class TestSmoothing:
         )
         errors = {}
         for smoothing in ("reconstruction", "residual"):
-            compressor = SkinCompressor(
+            compressor = CompressedSkinningSolver(
                 model_data=strong,
                 rest_joint_matrices=_grid_joints(),
                 smoothing=smoothing,
@@ -332,7 +334,7 @@ class TestSmoothing:
 class TestStillVertices:
     def test_need_a_root(self, grid_model_data):
         with pytest.raises(ValueError, match="root"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 root_joint="none",
@@ -342,7 +344,7 @@ class TestStillVertices:
     @pytest.mark.parametrize("value", ["quiet", -0.1])
     def test_invalid_values_are_rejected(self, grid_model_data, value):
         with pytest.raises(ValueError, match="still_vertices"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 still_vertices=value,
@@ -350,7 +352,7 @@ class TestStillVertices:
 
     def test_static_vertices_are_pinned_to_the_root(self, tmp_path):
         model = _with_still_region(make_grid_model())
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=model,
             rest_joint_matrices=_grid_joints(),
             still_vertices="static",
@@ -368,7 +370,7 @@ class TestStillVertices:
         model = _with_still_region(make_grid_model(), scale=1e-3)
         largest = np.linalg.norm(model.deltas, axis=2).max()
         output = tmp_path / "slow.npz"
-        SkinCompressor(
+        CompressedSkinningSolver(
             model_data=model,
             rest_joint_matrices=_grid_joints(),
             still_vertices=0.01 * largest,
@@ -381,7 +383,7 @@ class TestStillVertices:
     def test_the_reported_error_covers_every_vertex(self, tmp_path):
         model = _with_still_region(make_grid_model(), scale=1e-3)
         largest = np.linalg.norm(model.deltas, axis=2).max()
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=model,
             rest_joint_matrices=_grid_joints(),
             still_vertices=0.01 * largest,
@@ -420,7 +422,7 @@ class TestStillVertices:
         )
 
     def test_none_turns_pinning_off(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_grid_joints(),
             still_vertices="none",
@@ -429,12 +431,14 @@ class TestStillVertices:
         assert compressor.still_vertices is None
 
     def test_nothing_is_pinned_by_default_without_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data, number_of_bones=10)
+        compressor = CompressedSkinningSolver(
+            model_data=grid_model_data, number_of_bones=10
+        )
 
         assert compressor.still_vertices is None
 
     def test_nothing_is_pinned_by_default_without_a_root(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_grid_joints(),
             root_joint="none",
