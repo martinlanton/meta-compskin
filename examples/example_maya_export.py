@@ -66,12 +66,12 @@ def export_with_joint_matrices():
 
     When ``joints`` is provided, the world-space 4x4 matrix of each joint is
     written to the NPZ under the extra key ``rest_joint_matrices``, ready to
-    pass to ``SkinCompressor(rest_joint_matrices=...)``. The matrices are
+    pass to ``CompressedSkinningSolver(rest_joint_matrices=...)``. The matrices are
     stored with translation in the last column (standard homogeneous
     convention), i.e. transposed from Maya's row-vector convention.
 
     Note:
-        SkinCompressor requires at least max_influences + 1 bones
+        CompressedSkinningSolver requires at least max_influences + 1 bones
         (9 with default settings), so export at least 9 joints if you plan
         to compress with them.
     """
@@ -102,7 +102,7 @@ def compress_exported_data():
     import numpy as np  # noqa: PLC0415
 
     from metacompskin.model_data import BlendshapeModelData  # noqa: PLC0415
-    from metacompskin.model_fit import SkinCompressor  # noqa: PLC0415
+    from metacompskin.model_fit import CompressedSkinningSolver  # noqa: PLC0415
 
     model_data = BlendshapeModelData.from_npz("exports/head.npz")
     print(f"Loaded: {model_data}")
@@ -112,12 +112,12 @@ def compress_exported_data():
     print(f"Shapes: {list(raw['shape_names'])}")
 
     # Plain compression (100 virtual bones at the origin):
-    compressor = SkinCompressor(model_data=model_data, iterations=10000)
+    compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
     compressor.run(output_location="exports/head_compressed.npz")
 
     # Or, if joints were exported, compress against the real skeleton:
     if "rest_joint_matrices" in raw:
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=model_data,
             iterations=10000,
             rest_joint_matrices=raw["rest_joint_matrices"],

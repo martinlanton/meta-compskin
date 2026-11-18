@@ -1,7 +1,7 @@
 """Example: Building the compressed result back into Autodesk Maya.
 
 ``build_skinned_rig`` runs INSIDE Maya (script editor) or mayapy. It reads the
-NPZ written by ``SkinCompressor.run`` and, on the selected neutral head:
+NPZ written by ``CompressedSkinningSolver.run`` and, on the selected neutral head:
 
 1. duplicates the mesh (the original and its blendShape node stay untouched;
    pass ``duplicate_mesh=False`` to skin a deformer-free mesh in place),
@@ -34,7 +34,7 @@ def build_rig_on_selection(
     """Build the skinned rig on the selected mesh, labelling frames by shape name.
 
     Args:
-        compressed_path: NPZ file written by ``SkinCompressor.run``.
+        compressed_path: NPZ file written by ``CompressedSkinningSolver.run``.
         model_path: NPZ file written by ``MayaBlendshapeExporter``; only its
             ``shape_names`` array is used, to label the frames. Pass an empty
             string to use ``shape_000``-style placeholders instead.

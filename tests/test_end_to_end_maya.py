@@ -29,7 +29,7 @@ pytestmark = pytest.mark.end_to_end
 
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
 N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
-MAX_INFLUENCES = 8  # K, SkinCompressor default
+MAX_INFLUENCES = 8  # K, CompressedSkinningSolver default
 # Non-zero fraction of the 6-DOF transform deltas (6 per shape and bone).
 # The paper keeps about 10% (L = 6000 at P = 40, Section 4); 15% here.
 NNZ_DENSITY = 0.15

@@ -9,7 +9,7 @@ from metacompskin.cli import main
 from metacompskin.maya_exporter import nearest_listed_ancestors
 from metacompskin.maya_pipeline import CompressionSettings, compression_command
 from metacompskin.model_fit import (
-    SkinCompressor,
+    CompressedSkinningSolver,
     accumulate_joint_transforms,
     hierarchical_coefficients,
     joint_chain_matrix,
@@ -28,8 +28,8 @@ def _joint_matrices(n_joints: int = 6) -> np.ndarray:
     return matrices
 
 
-def _compressor(**settings) -> SkinCompressor:
-    return SkinCompressor(
+def _compressor(**settings) -> CompressedSkinningSolver:
+    return CompressedSkinningSolver(
         model_data=make_grid_model(),
         iterations=200,
         rest_joint_matrices=_joint_matrices(),
@@ -106,10 +106,10 @@ class TestAccumulateJointTransforms:
         np.testing.assert_array_equal(accumulated[:, 4:8], 3.0)
 
 
-class TestSkinCompressorJointParents:
+class TestCompressedSkinningSolverJointParents:
     def test_parents_need_joint_matrices(self):
         with pytest.raises(ValueError, match="rest_joint_matrices"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=make_grid_model(), number_of_bones=6, joint_parents=_PARENTS
             )
 

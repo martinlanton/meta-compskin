@@ -14,14 +14,14 @@ import os
 import numpy as np
 import pytest
 
-from metacompskin.model_fit import SkinCompressor
+from metacompskin.model_fit import CompressedSkinningSolver
 
 # Long on CPU for a large head; deselect with -m "not end_to_end".
 pytestmark = pytest.mark.end_to_end
 
 ITERATIONS = int(os.environ.get("COMPSKIN_E2E_ITERATIONS", "600"))
 N_BONES = 200  # the paper's "Proteus HD" setting (Table 1)
-MAX_INFLUENCES = 8  # K, SkinCompressor default
+MAX_INFLUENCES = 8  # K, CompressedSkinningSolver default
 # Non-zero fraction of the 6-DOF transform deltas (6 per shape and bone).
 # The paper keeps about 10% (L = 6000 at P = 40, Section 4); 15% here.
 NNZ_DENSITY = 0.15
@@ -40,7 +40,7 @@ def sparsity_budget(model) -> int:
 def compressed(head_model, tmp_path_factory):
     """Compress the head once and return (compressor, output arrays)."""
     output = tmp_path_factory.mktemp("end_to_end") / "compressed.npz"
-    compressor = SkinCompressor(
+    compressor = CompressedSkinningSolver(
         model_data=head_model,
         iterations=ITERATIONS,
         number_of_bones=N_BONES,

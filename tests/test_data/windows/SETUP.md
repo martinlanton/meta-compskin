@@ -25,7 +25,7 @@ Tests using this data are skipped automatically on other platforms.
 | Property | Value |
 |----------|-------|
 | Device | CUDA (GPU) |
-| Random seed | 12345 (default of the `seed` argument of `SkinCompressor`) |
+| Random seed | 12345 (default of the `seed` argument of `CompressedSkinningSolver`) |
 
 ## Files
 
@@ -36,7 +36,7 @@ Tests using this data are skipped automatically on other platforms.
 
 ## Notes
 
-- To regenerate these files on Windows, run `SkinCompressor` with the appropriate iteration
+- To regenerate these files on Windows, run `CompressedSkinningSolver` with the appropriate iteration
   count and save the output NPZ. Ensure PyTorch and CUDA versions match those documented above.
 - See `tests/test_data/macos/SETUP.md` for the macOS equivalent and an explanation of why
   expected data is platform-specific.

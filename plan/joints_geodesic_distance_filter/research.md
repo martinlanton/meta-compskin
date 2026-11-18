@@ -1,6 +1,6 @@
 # Geodesic candidate-joint filter for user-supplied joints
 
-Research notes behind `candidate_joints_per_vertex` in `SkinCompressor`
+Research notes behind `candidate_joints_per_vertex` in `CompressedSkinningSolver`
 (`src/metacompskin/model_fit.py`). Written 2026-09-10, implemented in the same
 session.
 
@@ -122,7 +122,7 @@ once before training.
 column with `argpartition`, giving a boolean $(P, N)$ mask. With $M \ge P$
 the mask is all true.
 
-In `SkinCompressor.run` the mask is built once, applied to the random initial
+In `CompressedSkinningSolver.run` the mask is built once, applied to the random initial
 `W`, and stored on `self.candidate_mask`. In `train` it is applied inside the
 existing `no_grad` block, before the top-$K$ cut:
 

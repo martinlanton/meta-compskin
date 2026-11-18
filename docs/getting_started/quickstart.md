@@ -11,7 +11,7 @@ step links to the page that explains it in depth.
    1. Export blendshapes  ───────────►  BlendshapeModelData
                                                │
                                                ▼
-                                     2. SkinCompressor.run()
+                                     2. CompressedSkinningSolver.run()
                                                │
                                                ▼
                                    compressed .npz (weights + joint motion)
@@ -41,9 +41,9 @@ or build the `.npz` file yourself. Both are covered in
 ## 2. Compress
 
 ```python
-from metacompskin import SkinCompressor
+from metacompskin import CompressedSkinningSolver
 
-compressor = SkinCompressor(model_data=model_data, iterations=10000)
+compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
 compressor.run(output_location="output/aura_compressed.npz")
 ```
 

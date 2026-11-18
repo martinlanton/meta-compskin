@@ -38,7 +38,7 @@ class TestCompskinMacOS(unittest.TestCase):
             self.result_file.unlink()
 
     def test_default_output_short_iter(self):
-        compressor = model_fit.SkinCompressor(
+        compressor = model_fit.CompressedSkinningSolver(
             model_data=self.model_data, iterations=600, number_of_bones=40
         )
         compressor.run(output_location=self.result_file)
@@ -52,7 +52,7 @@ class TestCompskinMacOS(unittest.TestCase):
                 )
 
     def test_default_output(self):
-        compressor = model_fit.SkinCompressor(
+        compressor = model_fit.CompressedSkinningSolver(
             model_data=self.model_data,
             iterations=10000,
             number_of_bones=40,

@@ -8,7 +8,7 @@ from metacompskin.cli import main
 from metacompskin.maya_pipeline import CompressionSettings, compression_command
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
-    SkinCompressor,
+    CompressedSkinningSolver,
     distance_weights,
     geodesic_joint_distances,
     static_vertex_mask,
@@ -100,19 +100,21 @@ class TestStaticVertexMask:
 
 class TestWeightInitSetting:
     def test_defaults_to_distance_with_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data, rest_joint_matrices=_grid_joints()
         )
 
         assert compressor.weight_init == "distance"
 
     def test_defaults_to_noise_without_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data, number_of_bones=10)
+        compressor = CompressedSkinningSolver(
+            model_data=grid_model_data, number_of_bones=10
+        )
 
         assert compressor.weight_init == "noise"
 
     def test_noise_can_be_requested_with_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_grid_joints(),
             weight_init="noise",
@@ -122,13 +124,13 @@ class TestWeightInitSetting:
 
     def test_distance_needs_joint_matrices(self, grid_model_data):
         with pytest.raises(ValueError, match="rest_joint_matrices"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data, number_of_bones=10, weight_init="distance"
             )
 
     def test_unknown_values_are_rejected(self, grid_model_data):
         with pytest.raises(ValueError, match="weight_init"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 weight_init="heat",
@@ -138,7 +140,7 @@ class TestWeightInitSetting:
 class TestDistanceStartRuns:
     def test_static_vertices_land_fully_on_the_root(self, grid_model_data, tmp_path):
         output = tmp_path / "static.npz"
-        SkinCompressor(
+        CompressedSkinningSolver(
             model_data=_with_static_region(grid_model_data),
             iterations=(600,),
             rest_joint_matrices=_grid_joints(),
@@ -153,7 +155,7 @@ class TestDistanceStartRuns:
     def test_the_result_is_valid_and_reproducible(self, grid_model_data, tmp_path):
         def compress(name):
             output = tmp_path / f"{name}.npz"
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data, rest_joint_matrices=_grid_joints(), **_FAST
             ).run(output)
             return np.load(output)["weights"]
@@ -170,7 +172,7 @@ class TestDistanceStartRuns:
         results = {}
         for init in ("noise", "distance"):
             output = tmp_path / f"{init}.npz"
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_grid_joints(),
                 weight_init=init,
@@ -183,7 +185,7 @@ class TestDistanceStartRuns:
     def test_the_start_follows_the_nearest_joints(self, grid_model_data, tmp_path):
         """With a single short step the output still reflects the start."""
         output = tmp_path / "one_step.npz"
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=1,
             rest_joint_matrices=_grid_joints(),
@@ -207,7 +209,7 @@ class TestDistanceStartRuns:
 
     def test_a_designated_root_keeps_its_floor(self, grid_model_data, tmp_path):
         output = tmp_path / "designated.npz"
-        SkinCompressor(
+        CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_grid_joints(),
             root_joint=0,
@@ -221,7 +223,7 @@ class TestDistanceStartRuns:
 
 class TestCandidateDefault:
     def test_default_mask_is_two_wider_than_the_influences(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=np.tile(np.eye(4), (40, 1, 1)),
         )
@@ -229,7 +231,7 @@ class TestCandidateDefault:
         assert compressor.candidate_joints_per_vertex == 10
 
     def test_single_stage_warm_up_uses_the_default_mask(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             rest_joint_matrices=np.tile(np.eye(4), (40, 1, 1)),

@@ -1,4 +1,4 @@
-"""Tests for SkinCompressor construction: the optimisation settings it accepts."""
+"""Tests for CompressedSkinningSolver construction: the optimisation settings it accepts."""
 
 import numpy as np
 import pytest
@@ -6,7 +6,7 @@ import torch
 
 from metacompskin.model_data import BlendshapeModelData
 from metacompskin.model_fit import (
-    SkinCompressor,
+    CompressedSkinningSolver,
     TrainingPhase,
     candidate_joint_mask,
     geodesic_joint_distances,
@@ -32,7 +32,7 @@ def _grid_joint_positions(n_joints: int) -> np.ndarray:
 
 class TestRootJoint:
     def test_default_with_joint_matrices_appends_root(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
         )
@@ -41,13 +41,13 @@ class TestRootJoint:
         assert compressor.number_of_bones == 8
 
     def test_default_without_joint_matrices_has_no_root(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data)
+        compressor = CompressedSkinningSolver(model_data=grid_model_data)
 
         assert compressor.root_joint is None
         assert compressor.number_of_bones == 100
 
     def test_none_keeps_bone_count(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
             root_joint="none",
@@ -57,7 +57,7 @@ class TestRootJoint:
         assert compressor.number_of_bones == 7
 
     def test_new_without_matrices_appends_root(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=None,
             root_joint="new",
@@ -67,7 +67,7 @@ class TestRootJoint:
         assert compressor.number_of_bones == 101
 
     def test_designated_joint_as_root(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
             root_joint=3,
@@ -78,7 +78,7 @@ class TestRootJoint:
 
     def test_rejects_out_of_range_index(self, grid_model_data):
         with pytest.raises(ValueError, match="root_joint"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(7),
                 root_joint=7,
@@ -86,7 +86,7 @@ class TestRootJoint:
 
     def test_rejects_negative_index(self, grid_model_data):
         with pytest.raises(ValueError, match="root_joint"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(7),
                 root_joint=-1,
@@ -94,7 +94,7 @@ class TestRootJoint:
 
     def test_rejects_bool(self, grid_model_data):
         with pytest.raises(ValueError, match="root_joint"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(7),
                 root_joint=True,
@@ -102,7 +102,7 @@ class TestRootJoint:
 
     def test_rejects_unrecognized_string(self, grid_model_data):
         with pytest.raises(ValueError, match="root_joint"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(7),
                 root_joint="head",
@@ -111,7 +111,7 @@ class TestRootJoint:
     def test_candidate_count_respects_geodesic_joints_not_including_root(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(40),
             root_joint="new",
@@ -120,12 +120,12 @@ class TestRootJoint:
         assert compressor.candidate_joints_per_vertex == 10  # min(8 + 2, 40 - 1)
 
     def test_warm_up_disabled_shortens_schedule(self, grid_model_data):
-        compressor_with_warmup = SkinCompressor(
+        compressor_with_warmup = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=100,
             warm_up_enabled=True,
         )
-        compressor_no_warmup = SkinCompressor(
+        compressor_no_warmup = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=100,
             warm_up_enabled=False,
@@ -135,7 +135,7 @@ class TestRootJoint:
         assert len(compressor_no_warmup.schedule) == 1  # stage only
 
     def test_warm_up_disabled_all_phases_normalized(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=100,
             warm_up_enabled=False,
@@ -169,7 +169,7 @@ class TestIntegration:
             alpha=0.0,  # No regularization so static vertices can go to zero
         )
 
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=static_model,
             iterations=(600,),  # Single stage, warm-up then normalized
             rest_joint_matrices=_identity_joint_matrices(6),
@@ -212,7 +212,7 @@ class TestIntegration:
             alpha=0.0,
         )
 
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=static_model,
             iterations=(600,),
             rest_joint_matrices=_identity_joint_matrices(6),
@@ -230,7 +230,7 @@ class TestIntegration:
 
 class TestProjections:
     def test_project_weights_keeps_top_k_and_no_negatives(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(10),
             max_influences=2,
@@ -245,7 +245,7 @@ class TestProjections:
         assert (W != 0).sum(dim=0).max() <= 3  # max_influences + root
 
     def test_project_transforms_keeps_exactly_l_largest(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(10),
             total_nnz_B_rt=100,
@@ -258,9 +258,9 @@ class TestProjections:
         assert (B_rt.abs() > 0).sum() == 100
 
 
-class TestSkinCompressorSettings:
+class TestCompressedSkinningSolverSettings:
     def test_defaults(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data)
+        compressor = CompressedSkinningSolver(model_data=grid_model_data)
 
         assert compressor.number_of_bones == 100
         assert compressor.max_influences == 8
@@ -271,12 +271,12 @@ class TestSkinCompressorSettings:
         assert compressor.reconstruction_error is None
 
     def test_seed_is_taken_from_the_constructor(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data, seed=7)
+        compressor = CompressedSkinningSolver(model_data=grid_model_data, seed=7)
 
         assert compressor.seed == 7
 
     def test_settings_are_taken_from_the_constructor(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             number_of_bones=12,
             max_influences=4,
@@ -292,7 +292,7 @@ class TestSkinCompressorSettings:
         assert compressor.power == 12
 
     def test_number_of_bones_follows_the_rest_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
         )
@@ -304,7 +304,7 @@ class TestSkinCompressorSettings:
     def test_number_of_bones_follows_the_rest_joint_matrices_without_root(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
             root_joint="none",
@@ -315,7 +315,7 @@ class TestSkinCompressorSettings:
     def test_number_of_bones_matching_the_rest_joint_matrices_is_accepted(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),
             number_of_bones=7,
@@ -329,7 +329,7 @@ class TestSkinCompressorSettings:
         self, grid_model_data
     ):
         with pytest.raises(ValueError, match="number_of_bones"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(7),
                 number_of_bones=5,
@@ -338,7 +338,7 @@ class TestSkinCompressorSettings:
     def test_run_writes_one_weight_column_per_requested_bone(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             number_of_bones=10,
@@ -354,7 +354,7 @@ class TestSkinCompressorSettings:
     def test_run_keeps_at_most_max_influences_weights_per_vertex(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             number_of_bones=10,
@@ -376,8 +376,12 @@ class TestSkinCompressorSettings:
             "seed": 3,
         }
 
-        SkinCompressor(model_data=grid_model_data, **settings).run(tmp_path / "a.npz")
-        SkinCompressor(model_data=grid_model_data, **settings).run(tmp_path / "b.npz")
+        CompressedSkinningSolver(model_data=grid_model_data, **settings).run(
+            tmp_path / "a.npz"
+        )
+        CompressedSkinningSolver(model_data=grid_model_data, **settings).run(
+            tmp_path / "b.npz"
+        )
 
         first, second = np.load(tmp_path / "a.npz"), np.load(tmp_path / "b.npz")
         np.testing.assert_array_equal(first["weights"], second["weights"])
@@ -386,10 +390,10 @@ class TestSkinCompressorSettings:
     def test_different_seeds_change_the_output(self, grid_model_data, tmp_path):
         settings = {"iterations": 300, "number_of_bones": 10, "total_nnz_B_rt": 100}
 
-        SkinCompressor(model_data=grid_model_data, seed=3, **settings).run(
+        CompressedSkinningSolver(model_data=grid_model_data, seed=3, **settings).run(
             tmp_path / "a.npz"
         )
-        SkinCompressor(model_data=grid_model_data, seed=4, **settings).run(
+        CompressedSkinningSolver(model_data=grid_model_data, seed=4, **settings).run(
             tmp_path / "b.npz"
         )
 
@@ -397,7 +401,7 @@ class TestSkinCompressorSettings:
         assert not np.array_equal(first["weights"], second["weights"])
 
     def test_run_records_the_reconstruction_error(self, grid_model_data, tmp_path):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             number_of_bones=10,
@@ -412,14 +416,14 @@ class TestSkinCompressorSettings:
         assert error.max_abs >= error.mean_abs > 0
 
 
-class TestSkinCompressorSchedule:
+class TestCompressedSkinningSolverSchedule:
     def _phases(self, compressor):
         return [(p.iterations, p.max_influences) for p in compressor.schedule]
 
     def test_default_schedule_is_two_phases_at_the_default_budgets(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(model_data=grid_model_data)
+        compressor = CompressedSkinningSolver(model_data=grid_model_data)
 
         assert compressor.stage_iterations == (10000,)
         assert [
@@ -431,7 +435,7 @@ class TestSkinCompressorSchedule:
     def test_a_sequence_of_iterations_halves_the_influences_per_stage(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data, iterations=(100, 100, 300), max_influences=2
         )
 
@@ -442,20 +446,22 @@ class TestSkinCompressorSchedule:
     def test_an_int_and_a_one_entry_sequence_build_the_same_schedule(
         self, grid_model_data
     ):
-        by_int = SkinCompressor(model_data=grid_model_data, iterations=300)
-        by_tuple = SkinCompressor(model_data=grid_model_data, iterations=(300,))
+        by_int = CompressedSkinningSolver(model_data=grid_model_data, iterations=300)
+        by_tuple = CompressedSkinningSolver(
+            model_data=grid_model_data, iterations=(300,)
+        )
 
         assert by_int.schedule == by_tuple.schedule
 
     @pytest.mark.parametrize("iterations", [(), 0, (100, 0)])
     def test_invalid_iterations_are_rejected(self, grid_model_data, iterations):
         with pytest.raises(ValueError, match="iterations"):
-            SkinCompressor(model_data=grid_model_data, iterations=iterations)
+            CompressedSkinningSolver(model_data=grid_model_data, iterations=iterations)
 
     def test_run_with_staged_iterations_ends_at_max_influences(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=(100, 100, 300),
             number_of_bones=10,
@@ -473,7 +479,7 @@ class TestSkinCompressorSchedule:
     def test_run_executes_a_schedule_assigned_before_it(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             number_of_bones=10,
@@ -492,7 +498,7 @@ class TestSkinCompressorSchedule:
     def test_run_rejects_a_warm_up_not_below_the_bone_count(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=(100,) * 4,
             number_of_bones=10,
@@ -506,7 +512,7 @@ class TestSkinCompressorSchedule:
     def test_run_rejects_a_coefficient_budget_above_the_model_size(
         self, grid_model_data, tmp_path
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data, number_of_bones=10, total_nnz_B_rt=500
         )
 
@@ -514,7 +520,7 @@ class TestSkinCompressorSchedule:
             compressor.run(tmp_path / "compressed.npz")
 
     def test_run_rejects_an_empty_schedule(self, grid_model_data, tmp_path):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data, number_of_bones=10, total_nnz_B_rt=100
         )
         compressor.schedule = ()
@@ -529,7 +535,7 @@ class TestCandidateJoints:
     def test_default_is_two_more_than_the_influences_with_joint_matrices(
         self, grid_model_data
     ):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(40),
         )
@@ -537,7 +543,7 @@ class TestCandidateJoints:
         assert compressor.candidate_joints_per_vertex == 10
 
     def test_default_stays_below_the_bone_count(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(10),
         )
@@ -545,7 +551,7 @@ class TestCandidateJoints:
         assert compressor.candidate_joints_per_vertex == 9
 
     def test_default_is_off_when_no_valid_count_exists(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(7),  # fewer than K + 1
         )
@@ -553,16 +559,18 @@ class TestCandidateJoints:
         assert compressor.candidate_joints_per_vertex is None
 
     def test_there_is_no_filter_without_joint_matrices(self, grid_model_data):
-        compressor = SkinCompressor(model_data=grid_model_data)
+        compressor = CompressedSkinningSolver(model_data=grid_model_data)
 
         assert compressor.candidate_joints_per_vertex is None
 
     def test_a_filter_without_joint_matrices_is_rejected(self, grid_model_data):
         with pytest.raises(ValueError, match="rest_joint_matrices"):
-            SkinCompressor(model_data=grid_model_data, candidate_joints_per_vertex=16)
+            CompressedSkinningSolver(
+                model_data=grid_model_data, candidate_joints_per_vertex=16
+            )
 
     def test_zero_disables_the_filter(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_identity_joint_matrices(40),
             candidate_joints_per_vertex=0,
@@ -575,14 +583,14 @@ class TestCandidateJoints:
         self, grid_model_data, candidates
     ):
         with pytest.raises(ValueError, match="candidate_joints_per_vertex"):
-            SkinCompressor(
+            CompressedSkinningSolver(
                 model_data=grid_model_data,
                 rest_joint_matrices=_identity_joint_matrices(40),
                 candidate_joints_per_vertex=candidates,
             )
 
     def test_caps_the_annealing_ceiling(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=(100, 100, 300),
             rest_joint_matrices=_identity_joint_matrices(40),
@@ -593,7 +601,7 @@ class TestCandidateJoints:
         assert [p.max_influences for p in compressor.schedule] == [6, 6, 3, 2]
 
     def test_single_stage_warm_up_uses_the_candidate_count(self, grid_model_data):
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             iterations=300,
             rest_joint_matrices=_identity_joint_matrices(40),
@@ -604,7 +612,7 @@ class TestCandidateJoints:
 
     def test_run_only_weights_joints_near_each_vertex(self, grid_model_data, tmp_path):
         positions = _grid_joint_positions(10)
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_joint_matrices_at(positions),
             max_influences=2,
@@ -628,7 +636,7 @@ class TestCandidateJoints:
         self, grid_model_data, tmp_path, capsys
     ):
         positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_joint_matrices_at(positions),
             max_influences=2,
@@ -645,7 +653,7 @@ class TestCandidateJoints:
         self, grid_model_data, tmp_path, capsys
     ):
         positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_joint_matrices_at(positions),
             max_influences=2,
@@ -664,7 +672,7 @@ class TestCandidateJoints:
 
     def test_run_reports_root_usage(self, grid_model_data, tmp_path, capsys):
         positions = np.vstack([_grid_joint_positions(9), [[50.0, 50.0, 50.0]]])
-        compressor = SkinCompressor(
+        compressor = CompressedSkinningSolver(
             model_data=grid_model_data,
             rest_joint_matrices=_joint_matrices_at(positions),
             max_influences=2,

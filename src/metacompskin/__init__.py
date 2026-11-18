@@ -9,7 +9,7 @@ Note:
     :class:`MayaBlendshapeExporter` or :func:`build_skinned_rig` — can import
     the package without having
     PyTorch installed. Torch is only imported when a class that needs it
-    (e.g. ``SkinCompressor``) is first accessed.
+    (e.g. ``CompressedSkinningSolver``) is first accessed.
 """
 
 from importlib import import_module
@@ -21,16 +21,17 @@ if TYPE_CHECKING:
     from metacompskin.maya_pipeline import compress_and_build_rig
     from metacompskin.maya_rig_builder import build_skinned_rig
     from metacompskin.model_data import BlendshapeModelData, MayaBlendshapeModelData
-    from metacompskin.model_fit import SkinCompressor
+    from metacompskin.model_fit import CompressedSkinningSolver
 
 __version__ = "0.5.1"
 
 _EXPORTS = {
     "AnimationFrameGenerator": "metacompskin.animation_generator",
     "BlendshapeModelData": "metacompskin.model_data",
+    "CompressedSkinningSolver": "metacompskin.model_fit",
     "MayaBlendshapeExporter": "metacompskin.maya_exporter",
     "MayaBlendshapeModelData": "metacompskin.model_data",
-    "SkinCompressor": "metacompskin.model_fit",
+    "SkinCompressor": "metacompskin.model_fit",  # former name; warns when used
     "build_skinned_rig": "metacompskin.maya_rig_builder",
     "compress_and_build_rig": "metacompskin.maya_pipeline",
 }
@@ -38,9 +39,9 @@ _EXPORTS = {
 __all__ = [
     "AnimationFrameGenerator",
     "BlendshapeModelData",
+    "CompressedSkinningSolver",
     "MayaBlendshapeExporter",
     "MayaBlendshapeModelData",
-    "SkinCompressor",
     "__version__",
     "build_skinned_rig",
     "compress_and_build_rig",

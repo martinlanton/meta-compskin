@@ -2,7 +2,7 @@
 
 This script shows how to:
 1. Load model data
-2. Run compression with SkinCompressor
+2. Run compression with CompressedSkinningSolver
 3. Generate animation frames with AnimationFrameGenerator
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from metacompskin.animation_generator import AnimationFrameGenerator
 from metacompskin.model_data import BlendshapeModelData
-from metacompskin.model_fit import SkinCompressor
+from metacompskin.model_fit import CompressedSkinningSolver
 
 
 def main():
@@ -27,7 +27,7 @@ def main():
 
     # Step 2: Run compression
     print("\nRunning compression...")
-    compressor = SkinCompressor(model_data=model_data, iterations=10000)
+    compressor = CompressedSkinningSolver(model_data=model_data, iterations=10000)
     compressor.run(output_location=compressed_output_path)
     print(f"Compressed data saved to: {compressed_output_path}")
 

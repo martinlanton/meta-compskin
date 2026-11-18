@@ -1,7 +1,7 @@
 """Maya-side rig builder for compressed skinning output.
 
 This module runs inside Maya (or ``mayapy``) and turns the NPZ file written by
-:meth:`SkinCompressor.run` into a working Maya rig on the selected mesh:
+:meth:`CompressedSkinningSolver.run` into a working Maya rig on the selected mesh:
 
 1. The selected mesh is duplicated (the original, and any blendShape node on
    it, is left untouched so the two can be compared side by side), or, with
@@ -66,7 +66,7 @@ _TANGENT_TYPES = {"step": ("linear", "step"), "spline": ("flat", "flat")}
 
 @dataclass(frozen=True)
 class CompressedSkin:
-    """In-memory view of the archive written by :meth:`SkinCompressor.run`.
+    """In-memory view of the archive written by :meth:`CompressedSkinningSolver.run`.
 
     Attributes:
         rest: Centred rest vertices, shape (N, 3).
@@ -484,7 +484,7 @@ def build_skinned_rig(  # noqa: PLR0913
     and are the skin cluster's influences.
 
     Args:
-        compressed_path: NPZ file written by :meth:`SkinCompressor.run`.
+        compressed_path: NPZ file written by :meth:`CompressedSkinningSolver.run`.
         mesh: Transform or mesh shape to skin. Defaults to the current selection.
         shape_names: Ordered blendshape names (for the ``currentShape``
             attribute). Defaults to ``shape_000``, ``shape_001``, ...
