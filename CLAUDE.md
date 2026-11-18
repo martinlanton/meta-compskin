@@ -81,6 +81,9 @@ Input .npz (blendshapes)
 | `smoothing` | `"residual"` with joint matrices, `"reconstruction"` else | `"residual"` applies the alpha Laplacian to BC − A instead of BC |
 | `still_vertices` | `"static"` with joint matrices and a root, off else | `"static"` or a model-unit distance: pin those vertices to the root and skip them in the solve (objective unchanged, faster); `"none"` turns it off |
 | `joint_parents` | `None` | Optional (CLI `--joint-hierarchy`). With joint matrices: parent index per joint (-1 none). Each joint's own delta is summed down the hierarchy; output adds `jointParents` and `localShapeXform`. `deltas_about_joints=True` solves own deltas about each joint instead of the mesh centre. |
+| `transform_channels` | 6 | Channels per joint and shape: 6 rotation + translation; 9 adds per-axis scale; 12 adds the symmetric shears (spans every affine change). Budget L scales with it (1.5 L, 2 L). Not with `joint_parents` above 6 |
+| `rotation_penalty` | 0 | Penalty on mean(B_rt[:3]²), scaled by mean(A²): keeps the joints' linearised rotations small |
+| `translation_unit` | `"model"` | `"head"`: translation channels in the head's RMS radius, so they are comparable to rotations in any unit |
 | `root_joint` | `"new"` with matrices, `None` else | Root influence: `None`/auto, `"new"` (synthetic), `"none"` (off), or a joint index. Static/unexplainable vertices land on root. |
 
 ## Testing

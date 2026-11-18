@@ -61,6 +61,9 @@ _DEFAULT_PENALTY_GUARD = (
 _STRANDED_ROOT_SHARE = (
     0.999  # moving skin with this share on the root counts as stranded
 )
+_PAPER_CHANNELS = 6  # rotation and translation, the paper's transforms
+_TRANSFORM_CHANNELS = (6, 9, 12)  # + a scale along each axis; + the symmetric shears
+_TRANSLATION_UNITS = ("model", "head")
 
 
 def _build_adjacency_matrix(faces: np.ndarray, n_verts: int) -> sp.sparse.csr_matrix:
@@ -641,6 +644,48 @@ def _resolve_weight_init(requested: str | None, has_joint_matrices: bool) -> str
     return requested
 
 
+def _resolve_transform_channels(requested: int, has_joint_parents: bool) -> int:
+    """Validates the transform_channels argument.
+
+    Raises:
+        ValueError: If it is not 6, 9 or 12, or is above 6 with a joint hierarchy.
+    """
+    if requested not in _TRANSFORM_CHANNELS:
+        raise ValueError(
+            f"transform_channels={requested} must be one of {_TRANSFORM_CHANNELS}"
+        )
+    if requested != _PAPER_CHANNELS and has_joint_parents:
+        raise ValueError(
+            f"transform_channels={requested} cannot go through joint_parents: a "
+            "hierarchy composes rotations and translations only; use 6"
+        )
+    return int(requested)
+
+
+def _resolve_rotation_penalty(requested: float) -> float:
+    """Validates the rotation_penalty argument.
+
+    Raises:
+        ValueError: If it is negative.
+    """
+    if requested < 0:
+        raise ValueError(f"rotation_penalty={requested} must not be negative")
+    return float(requested)
+
+
+def _resolve_translation_unit(requested: str) -> str:
+    """Validates the translation_unit argument.
+
+    Raises:
+        ValueError: If it is not "model" or "head".
+    """
+    if requested not in _TRANSLATION_UNITS:
+        raise ValueError(
+            f"translation_unit={requested!r} must be one of {_TRANSLATION_UNITS}"
+        )
+    return requested
+
+
 def _resolve_distance_penalty_guard(requested: float) -> float:
     """Validates the distance_penalty_guard argument.
 
@@ -921,6 +966,9 @@ class CompressedSkinningSolver:
         still_vertices: str | float | None = None,
         distance_penalty_refit: bool = True,
         distance_penalty_guard: float = _DEFAULT_PENALTY_GUARD,
+        transform_channels: int = _PAPER_CHANNELS,
+        rotation_penalty: float = 0.0,
+        translation_unit: str = "model",
     ):
         """Initializes the CompressedSkinningSolver.
 
@@ -945,7 +993,7 @@ class CompressedSkinningSolver:
                 Must be smaller than the number of bones.
             total_nnz_B_rt: Sparsity budget L, the number of non-zero coefficients
                 kept in B_rt across the whole model (default 6000). Cannot exceed
-                6·S·P.
+                C·S·P, C being transform_channels.
             init_weight: Scale of the random initial values of B_rt (default 1e-3).
             power: Exponent p of the error norm in the loss (default 2; 12 for a
                 worst-case fit, Section 4.1).
@@ -1021,6 +1069,24 @@ class CompressedSkinningSolver:
                 least this share of its weight on its nearest joint for the
                 whole refit, so no moving skin is stranded on the root. 0.2
                 (default); 0 turns the guard off.
+            transform_channels: The channels each joint's change in each shape
+                is built from (see :meth:`buildTR`). 6 (default): rotation and
+                translation, the paper's. 9: also a scale along each axis of
+                the model. 12: also the three symmetric shears, which together
+                with the others span every affine change. More channels fit
+                the shapes better; give the budget L in proportion (1.5 L for
+                9, 2 L for 12) to compare at the same budget per channel.
+                Above 6 cannot be combined with joint_parents.
+            rotation_penalty: Strength of a penalty on the joints' linearised
+                rotations: the mean square of the rotation coefficients, times
+                the data's mean squared motion so it does not depend on the
+                scene unit, times this. It keeps joints from spinning to fit
+                skin that a translation or a neighbour could fit. 0 (default)
+                turns it off.
+            translation_unit: The unit of the translation channels. "model"
+                (default): the model's unit. "head": the head's RMS radius
+                about its centre, so translations and rotations are on a
+                comparable scale whatever the scene unit.
 
         Raises:
             ValueError: If rest_joint_matrices is not shaped (P, 4, 4), or if
@@ -1036,7 +1102,9 @@ class CompressedSkinningSolver:
                 without joint matrices; if distance_penalty is negative or set
                 without joint matrices; if distance_penalty_guard is not in
                 [0, 1); if smoothing is unknown; if still_vertices is invalid
-                or set without a root.
+                or set without a root; if transform_channels is not 6, 9 or 12,
+                or above 6 with joint_parents; if rotation_penalty is negative;
+                if translation_unit is unknown.
 
         Example:
             >>> from metacompskin.model_data import BlendshapeModelData
@@ -1118,6 +1186,10 @@ class CompressedSkinningSolver:
         self._joint_pivots: torch.Tensor | None = None
         self._joint_chain: torch.Tensor | None = None
 
+        self._set_transform_options(
+            transform_channels, rotation_penalty, translation_unit
+        )
+
         self.max_influences = max_influences  # number of weights per vertex
         self.total_nnz_B_rt = total_nnz_B_rt  # non-zero values kept in B_rt
         self.init_weight = init_weight
@@ -1159,6 +1231,10 @@ class CompressedSkinningSolver:
             f"Using alpha value: {self.alpha} for model '{self.model_data.model_name}'"
         )
 
+        self._clear_run_state()
+
+    def _clear_run_state(self) -> None:
+        """Empties what run() fills in: losses, errors, operators, masks, optimiser."""
         self.loss_list: list[float] = []
         self.abserr_list: list[float] = []
         self.reconstruction_error: ReconstructionError | None = None
@@ -1178,10 +1254,10 @@ class CompressedSkinningSolver:
         error metrics, and saves the compressed skinning data to an NPZ file.
 
         Optimization Workflow:
-            0. Check self.schedule fits this model (K < P, L <= 6*S*P)
+            0. Check self.schedule fits this model (K < P, L <= C*S*P)
             1. Construct target matrix A from blendshape deltas
             2. Build Laplacian regularization matrix
-            3. Build transformation basis TR (6-DOF)
+            3. Build transformation basis TR (C channels, 6 by default)
             4. Initialize B_rt (transformation parameters) with small random values
             5. Initialize W (skinning weights) with small random values
             6. Prepare rest pose with homogeneous coordinates
@@ -1223,7 +1299,7 @@ class CompressedSkinningSolver:
         Raises:
             ValueError: If self.schedule is empty, or a phase keeps
                 max_influences >= number_of_bones weights per vertex, or more
-                than 6*S*P delta coefficients.
+                than C*S*P delta coefficients.
 
         Side Effects:
             - Prints model information and training progress
@@ -1262,12 +1338,18 @@ class CompressedSkinningSolver:
 
         TR = self.buildTR()
 
-        # B_rt - 6 degree of freedom  per blendshape per bone  (6, numBlendshapes, numBones, 1, 1)
+        # B_rt - C channels per blendshape per bone  (C, numBlendshapes, numBones, 1, 1)
         B_rt = (
             (
                 self.init_weight
                 * torch.randn(
-                    (6, self.model_data.n_blendshapes, self.number_of_bones, 1, 1)
+                    (
+                        self.transform_channels,
+                        self.model_data.n_blendshapes,
+                        self.number_of_bones,
+                        1,
+                        1,
+                    )
                 )
             )
             .clone()
@@ -1450,6 +1532,24 @@ class CompressedSkinningSolver:
             "localShapeXform": local_matrix.detach().cpu().numpy(),
         }
 
+    def _set_transform_options(
+        self, transform_channels: int, rotation_penalty: float, translation_unit: str
+    ) -> None:
+        """Validates and stores the channel count, rotation penalty and translation unit.
+
+        Needs ``joint_parents`` resolved first: channels above six cannot go
+        through a hierarchy.
+        """
+        self.transform_channels = _resolve_transform_channels(
+            transform_channels, has_joint_parents=self.joint_parents is not None
+        )
+        self.rotation_penalty = _resolve_rotation_penalty(rotation_penalty)
+        self.translation_unit = _resolve_translation_unit(translation_unit)
+        # what the rotation penalty is scaled by: the data's mean squared motion
+        self._rotation_energy = float(
+            np.mean(np.square(np.asarray(self.model_data.deltas), dtype=np.float64))
+        )
+
     def _set_fit_options(
         self,
         weight_init: str | None,
@@ -1498,7 +1598,7 @@ class CompressedSkinningSolver:
         Raises:
             ValueError: If self.schedule is empty, or a phase keeps
                 max_influences >= number_of_bones weights per vertex, or more
-                than 6*S*P delta coefficients, or the refit has no phase of
+                than C*S*P delta coefficients, or the refit has no phase of
                 its own.
         """
         if not self.schedule:
@@ -1509,7 +1609,11 @@ class CompressedSkinningSolver:
                 "schedule has a single phase: keep the warm-up, give more stages, "
                 "or set distance_penalty_refit=False"
             )
-        n_coefficients = 6 * self.model_data.n_blendshapes * self.number_of_bones
+        n_coefficients = (
+            self.transform_channels
+            * self.model_data.n_blendshapes
+            * self.number_of_bones
+        )
         for index, phase in enumerate(self.schedule, start=1):
             if phase.max_influences >= self.number_of_bones:
                 raise ValueError(
@@ -1519,7 +1623,7 @@ class CompressedSkinningSolver:
             if phase.total_nnz_B_rt > n_coefficients:
                 raise ValueError(
                     f"phase {index}: total_nnz_B_rt={phase.total_nnz_B_rt} exceeds "
-                    f"6*S*P={n_coefficients}"
+                    f"{self.transform_channels}*S*P={n_coefficients}"
                 )
 
     def _build_transform_mask(self) -> torch.Tensor | None:
@@ -2136,6 +2240,8 @@ class CompressedSkinningSolver:
             weighed_error = B_X - A
 
             loss = self._data_term(weighed_error)
+            if self.rotation_penalty:
+                loss += self._rotation_term(B_rt)
             if self.alpha is not None:
                 if self.L is None:
                     raise RuntimeError(
@@ -2362,8 +2468,8 @@ class CompressedSkinningSolver:
         """Assembles B, shape (3S, 4P), from coefficients in the shared frame.
 
         Args:
-            coefficients: Shape (6, S, P, 1, 1).
-            TR: Transform basis, shape (6, 1, 1, 3, 4).
+            coefficients: Shape (C, S, P, 1, 1).
+            TR: Transform basis, shape (C, 1, 1, 3, 4).
             n_bs: Number of blendshapes S.
             P: Number of bones.
 
@@ -2371,12 +2477,12 @@ class CompressedSkinningSolver:
             The transform matrix B, shape (3S, 4P).
         """
         B = coefficients[0, ...] * TR[0]
-        for i in range(1, 6):
+        for i in range(1, coefficients.shape[0]):
             B = B + coefficients[i, ...] * TR[i]
         return B.permute(0, 2, 1, 3).reshape(n_bs * 3, P * 4)
 
     def buildTR(self) -> torch.Tensor:
-        """Builds the 6-DOF transformation basis matrices (Equation 8).
+        """Builds the transformation basis matrices (Equation 8, 6 channels by default).
 
         This method constructs the fixed basis matrices used to represent affine
         transformations with linearized rotations. The 6 degrees of freedom consist
@@ -2411,8 +2517,13 @@ class CompressedSkinningSolver:
                 (TR)₅: translation in y direction
                 (TR)₆: translation in z direction
 
+        With ``transform_channels`` 9 or 12, scales and then symmetric shears
+        follow the six; with ``translation_unit="head"`` the translation
+        matrices carry the head's RMS radius instead of 1.
+
         Returns:
-            Transformation basis tensor, shape (6, 1, 1, 3, 4).
+            Transformation basis tensor, shape (C, 1, 1, 3, 4), C being
+            ``transform_channels``.
                 - First dimension: 6 basis matrices (3 rotation + 3 translation)
                 - Singleton dimensions for broadcasting with B_rt
                 - Last two dimensions: 3×4 affine transformation matrices
@@ -2452,8 +2563,58 @@ class CompressedSkinningSolver:
                               [[0, 0, 0, 0],
                                [0, 0, 0, 0],
                                [0, 0, 0, 1]]], dtype=torch.float32).to(self.device)
-        return ebase.reshape(6, 1, 1, 3, 4)
         # fmt: on
+        ebase = torch.cat([ebase, self._scale_and_shear_basis()])
+        if self.translation_unit == "head":
+            ebase[3:6] *= self._head_radius()
+        return ebase.reshape(self.transform_channels, 1, 1, 3, 4)
+
+    def _scale_and_shear_basis(self) -> torch.Tensor:
+        """The channels beyond rotation and translation, shape (C - 6, 3, 4).
+
+        Nine channels add a scale along each axis (a 1 on the diagonal); twelve
+        also add the symmetric shears (a 1 at (a, b) and (b, a)). With the
+        rotations, which are the antisymmetric part, they span every 3 x 3
+        linear change.
+
+        Returns:
+            The extra basis matrices, shape (C - 6, 3, 4); empty for 6 channels.
+        """
+        extra = []
+        if self.transform_channels >= 9:  # noqa: PLR2004
+            for axis in range(3):
+                scale = torch.zeros(3, 4)
+                scale[axis, axis] = 1
+                extra.append(scale)
+        if self.transform_channels >= 12:  # noqa: PLR2004
+            for a, b in ((0, 1), (0, 2), (1, 2)):
+                shear = torch.zeros(3, 4)
+                shear[a, b] = shear[b, a] = 1
+                extra.append(shear)
+        if not extra:
+            return torch.zeros(0, 3, 4, device=self.device)
+        return torch.stack(extra).to(self.device)
+
+    def _head_radius(self) -> float:
+        """RMS distance of the rest vertices from their centre, in model units.
+
+        Returns:
+            The radius, a float.
+        """
+        rest = np.asarray(self.model_data.rest_verts, dtype=np.float64)
+        return float(np.sqrt(((rest - rest.mean(axis=0)) ** 2).sum(axis=1).mean()))
+
+    def _rotation_term(self, B_rt: torch.Tensor) -> torch.Tensor:  # noqa: N803
+        """The rotation penalty: strength x mean squared motion x mean squared rotation.
+
+        Args:
+            B_rt: Coefficients, shape (C, S, P', 1, 1); the first three
+                channels are the linearised rotations, which have no unit.
+
+        Returns:
+            The penalty, a scalar tensor.
+        """
+        return self.rotation_penalty * self._rotation_energy * B_rt[:3].pow(2).mean()
 
 
 _DEPRECATED_NAMES = {"SkinCompressor": "CompressedSkinningSolver"}

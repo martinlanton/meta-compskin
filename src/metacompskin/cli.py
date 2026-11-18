@@ -199,6 +199,28 @@ def build_parser() -> argparse.ArgumentParser:
         "or 'none' to solve every vertex (the default without joints).",
     )
     parser.add_argument(
+        "--transform-channels",
+        type=int,
+        choices=[6, 9, 12],
+        default=None,
+        help="Channels of each joint's change per shape: 6 rotation and translation "
+        "(the default), 9 adds a scale per axis, 12 also the symmetric shears.",
+    )
+    parser.add_argument(
+        "--rotation-penalty",
+        type=float,
+        default=None,
+        help="Strength of a penalty on the joints' rotations, relative to the data's "
+        "motion (default 0, off).",
+    )
+    parser.add_argument(
+        "--translation-unit",
+        choices=["model", "head"],
+        default=None,
+        help="Unit of the translation channels: the model's (the default) or the "
+        "head's RMS radius.",
+    )
+    parser.add_argument(
         "--deltas-about-joints",
         action="store_true",
         help="With a joint hierarchy, solve each joint's own delta about the joint itself.",
@@ -287,6 +309,9 @@ def _compressor_settings(args: argparse.Namespace) -> dict[str, Any]:
         "distance_penalty_guard",
         "smoothing",
         "still_vertices",
+        "transform_channels",
+        "rotation_penalty",
+        "translation_unit",
     ):
         value = getattr(args, option, None)
         if value is not None:
