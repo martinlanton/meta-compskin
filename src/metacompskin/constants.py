@@ -4,13 +4,21 @@ This module contains model-specific constants and parameters used throughout
 the compressed skinning pipeline.
 """
 
-# Alpha values for Laplacian regularization
-# Lower values lead to sharper results, higher values lead to smoother results.
-# Alpha values should be lower for high density meshes and higher for low density meshes.
+# Alpha values for Laplacian regularization.
+# Alpha weighs the Laplacian term against the data term: higher values penalise
+# error (or, without residual smoothing, motion) that varies from vertex to vertex
+# more strongly; lower values let each vertex fit more freely.
 #
-# TODO: Can we procedurally determine the alpha value based on mesh density and sharpness?
-# We might be able to use the paper "Line Direction Matters: An Argument For The Use
-# Of Principal Directions In 3D Line Drawings"
+# The Laplacian is the uniform one (each vertex minus the mean of its neighbours)
+# and is not scaled by edge length. On motion that varies smoothly over the face its
+# output shrinks roughly with the square of the edge length, so a denser mesh needs a
+# *larger* alpha for the same smoothing; this is why the two dense sample heads use 50
+# and the two coarse ones 10. On error that changes from one vertex to the next it
+# does not shrink, so one alpha cannot mean the same thing on every mesh.
+#
+# TODO: Derive alpha from the head (edge length, curvature of the shapes, joint
+# spacing) instead of this table; see "Choosing alpha from the head" in
+# plan/research_output.md.
 MODEL_ALPHA_VALUES: dict[str, float] = {
     "aura": 10.0,
     "jupiter": 10.0,
